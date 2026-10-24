@@ -10,12 +10,18 @@ await writeFile('dist/index.html',html);
 await writeFile('public/index.html',html);
 await build({stdin:{contents:'export { DiscordSDK } from "@discord/embedded-app-sdk";',resolveDir:process.cwd()},bundle:true,minify:true,format:'esm',outfile:'dist/discord-sdk.js',legalComments:'eof',target:'es2022'});
 await copyFile('dist/discord-sdk.js','public/discord-sdk.js');
-// GitHub Pages publishes /docs; separate scripts also work with stricter iframe CSPs.
-await mkdir('docs',{recursive:true});
-const hosted=(await readFile('src/index.html','utf8')).replace('href="/style.css"','href="./style.css"').replace('src="/app.mjs"','src="./app.js"');
-await writeFile('docs/index.html',hosted);
-await writeFile('docs/app.js',result.outputFiles[0].text);
-await writeFile('docs/style.css',css);
-await copyFile('dist/discord-sdk.js','docs/discord-sdk.js');
-await writeFile('docs/.nojekyll','');
+
+ // Preserve customized GitHub Pages files.
+ // The docs/ folder is edited directly and is never regenerated.
+
+await mkdir('docs', { recursive: true });
+
+// Only update Discord SDK; keep all other docs files.
+await copyFile(
+  'dist/discord-sdk.js',
+  'docs/discord-sdk.js'
+);
+
+await writeFile('docs/.nojekyll', '');
+
 console.log('Built public/index.html and dist/index.html (both open directly, no local server).');
