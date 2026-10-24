@@ -115,32 +115,48 @@
 
   
 
+  
   function unlockAudio() {
     const AudioContextClass =
       window.AudioContext || window.webkitAudioContext;
   
-    if (!AudioContextClass) return null;
+    if (!AudioContextClass) {
+      console.error('Web Audio is not supported');
+      return null;
+    }
   
     try {
-      if (!audio) {
+      if (!audio || typeof audio.createGain !== 'function'
+          || audio.state === 'closed') {
         audio = new AudioContextClass();
+        masterGain = null;
+      }
   
-        // All sounds pass through this master volume node.
+      if (!masterGain || masterGain.context !== audio) {
         masterGain = audio.createGain();
-        masterGain.gain.value = volumePercent / 100;
+  
+        const slider = document.getElementById('soundVolume');
+        const value = Number(slider?.value ?? 100);
+  
+        masterGain.gain.value =
+          Math.max(0, Math.min(1, value / 100));
+  
         masterGain.connect(audio.destination);
       }
   
-      if (audio.state === 'suspended') {
-        audio.resume().catch(() => {});
+      if (audio.state !== 'running') {
+        audio.resume().catch(error => {
+          console.error('Audio resume failed:', error);
+        });
       }
   
       return audio;
     } catch (error) {
-      console.error('Audio unavailable:', error);
+      console.error('Audio initialization failed:', error);
       return null;
     }
   }
+
 
 
   document.addEventListener('pointerdown', unlockAudio, {capture:true});
