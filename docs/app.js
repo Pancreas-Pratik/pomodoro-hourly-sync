@@ -1,1 +1,326 @@
-var w=new Intl.DateTimeFormat("en-US",{minute:"numeric",second:"numeric"});function y(){return{mode:"custom",focus:50,rest:10,phase:"focus",running:!1,remaining:50*6e4,endsAt:null,version:0}}function m(t,e){if(t.mode==="hourly"){let r=Object.fromEntries(w.formatToParts(e).map(b=>[b.type,b.value])),a=Number(r.minute)*6e4+Number(r.second)*1e3+(e%1e3+1e3)%1e3,u=a<50*6e4?"focus":"break",p=(u==="focus"?50:60)*6e4-a;return{...t,focus:50,rest:10,phase:u,running:!0,remaining:p,endsAt:e+p}}if(!t.running)return{...t};let s=t.phase,n=t.endsAt;if(e>=n){let r=(t.focus+t.rest)*6e4;for(n+=Math.floor((e-n)/r)*r;e>=n;)s=s==="focus"?"break":"focus",n+=(s==="focus"?t.focus:t.rest)*6e4}return{...t,phase:s,endsAt:n,remaining:n-e}}function f(t,e,s){let n=m(t,s);switch(e.type){case"sync":n=m({...n,mode:"hourly"},s);break;case"pause":n={...n,mode:"custom",running:!1,endsAt:null};break;case"start":n.running||(n={...n,running:!0,endsAt:s+n.remaining});break;case"reset":n={...n,mode:"custom",phase:"focus",running:!1,remaining:n.focus*6e4,endsAt:null};break;case"durations":if(![e.focus,e.rest].every(r=>Number.isInteger(r)&&r>=1&&r<=180))throw new Error("Use whole minutes between 1 and 180.");n={...n,mode:"custom",focus:e.focus,rest:e.rest,phase:"focus",remaining:e.focus*6e4,endsAt:n.running?s+e.focus*6e4:null};break;default:throw new Error("Unknown timer action.")}return{...n,version:t.version+1}}var h="1563360058333597706";var I=new Map([...document.querySelectorAll("[id]")].map(t=>[t.id,t])),o=t=>I.get(t),i=(t,e)=>{o(t).textContent!==e&&(o(t).textContent=e)},T=new Intl.DateTimeFormat("en-US",{hour:"numeric",minute:"2-digit",timeZoneName:"short"}),c=f(y(),{type:"sync"},Date.now()),g;function k(){if(document.hidden)return;let t=Date.now(),e=m(c,t),s=Math.max(0,Math.ceil(e.remaining/1e3)),n=String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");i("countdown",n),i("phase",e.phase==="focus"?"Focus":"Break"),document.body.classList.toggle("break",e.phase==="break");let r=`${n} \xB7 ${e.phase==="focus"?"Focus":"Break"}`;document.title!==r&&(document.title=r),i("toggle",e.running?"Pause":e.remaining===(e.phase==="focus"?e.focus:e.rest)*6e4?"Start":"Resume"),i("next",e.running?`${e.phase==="focus"?"Break":"Focus"} at ${T.format(e.endsAt)}`:"Ready when you are.");let a=String(e.mode==="hourly");o("sync").getAttribute("aria-pressed")!==a&&o("sync").setAttribute("aria-pressed",a);let u=e.mode==="hourly"?"Synchronized to the hour ":"Synchronize to the hour ";o("sync").firstChild.textContent!==u&&(o("sync").firstChild.textContent=u),i("connection",e.mode==="hourly"?"Hourly schedule":"Personal timer"),i("clock",T.format(t))}function l(){clearTimeout(g),k(),document.hidden||(g=setTimeout(l,1e3-Date.now()%1e3+5))}function d(t,e={}){try{c=f(c,{type:t,...e},Date.now()),o("focus").value=c.focus,o("rest").value=c.rest,i("message",t==="sync"?"Following your local time schedule.":t==="durations"?"Your timer lengths are updated.":t==="pause"?"Your timer is paused.":t==="reset"?"Your timer is reset.":"Your timer is running."),l()}catch(s){i("message",s.message)}}o("toggle").onclick=()=>d(m(c,Date.now()).running?"pause":"start");o("reset").onclick=()=>d("reset");o("sync").onclick=()=>d("sync");o("durations").onsubmit=t=>{t.preventDefault(),d("durations",{focus:Number(o("focus").value),rest:Number(o("rest").value)})};document.addEventListener("visibilitychange",()=>{document.hidden?clearTimeout(g):l()});window.addEventListener("pageshow",l);l();new URLSearchParams(location.search).has("frame_id")&&h&&import("./discord-sdk.js").then(async({DiscordSDK:t})=>{let e=new t(h);await e.ready(),o("people").hidden=!1,i("members","Loading people in this Activity\u2026");let s=!1,n=({participants:r})=>{i("members",`${r.length} ${r.length===1?"person":"people"} in this Activity`),i("names",r.map(a=>a.global_name||a.username).join(" \xB7 "))};try{await e.subscribe("ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE",a=>{s=!0,n(a)});let r=await e.commands.getInstanceConnectedParticipants();s||n(r)}catch{s||i("members","Participant list unavailable in this Discord session.")}}).catch(()=>i("message","Discord connection unavailable; the local timer still works."));
+import {initialState, current, change} from './timer.js';
+import {SharedTimer} from './shared.js';
+import {
+  DISCORD_CLIENT_ID,
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+} from './config.js';
+
+const elements = new Map(
+  [...document.querySelectorAll('[id]')]
+    .map(el => [el.id, el])
+);
+const $ = id => elements.get(id);
+const text = (id, value) => {
+  if ($(id).textContent !== value) $(id).textContent = value;
+};
+
+const clock = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZoneName: 'short'
+});
+
+const inDiscord =
+  new URLSearchParams(location.search).has('frame_id');
+
+let state = change(
+  initialState(), {type: 'sync'}, Date.now()
+);
+let renderTimeout;
+let serverOffset = 0;
+let shared = null;
+let sharedReady = false;
+let connecting = inDiscord && Boolean(DISCORD_CLIENT_ID);
+let sharedConnection = 'reconnecting';
+let pending = false;
+
+const now = () => Date.now() + serverOffset;
+
+function render() {
+  if (document.hidden) return;
+
+  const time = now();
+  const view = current(state, time);
+  const seconds = Math.max(
+    0, Math.ceil(view.remaining / 1000)
+  );
+  const display =
+    String(Math.floor(seconds / 60)).padStart(2, '0') +
+    ':' + String(seconds % 60).padStart(2, '0');
+
+  text('countdown', display);
+  text('phase', view.phase === 'focus' ? 'Focus' : 'Break');
+
+  document.body.classList.toggle(
+    'break', view.phase === 'break'
+  );
+
+  const title = `${display} · ${
+    view.phase === 'focus' ? 'Focus' : 'Break'
+  }`;
+  if (document.title !== title) document.title = title;
+
+  text(
+    'toggle',
+    view.running ? 'Pause' :
+      view.remaining ===
+      (view.phase === 'focus' ? view.focus : view.rest) * 60000
+      ? 'Start' : 'Resume'
+  );
+
+  text(
+    'next',
+    view.running
+      ? `${view.phase === 'focus' ? 'Break' : 'Focus'} at ${
+          clock.format(view.endsAt)
+        }`
+      : 'Ready when you are.'
+  );
+
+  const pressed = String(view.mode === 'hourly');
+  if ($('sync').getAttribute('aria-pressed') !== pressed) {
+    $('sync').setAttribute('aria-pressed', pressed);
+  }
+
+  const label = view.mode === 'hourly'
+    ? 'Synchronized to the hour '
+    : 'Synchronize to the hour ';
+
+  if ($('sync').firstChild.textContent !== label) {
+    $('sync').firstChild.textContent = label;
+  }
+
+  const status = connecting
+    ? 'Connecting to shared timer…'
+    : sharedReady
+      ? sharedConnection === 'online'
+        ? view.mode === 'hourly'
+          ? 'Shared · hourly schedule'
+          : 'Shared timer'
+        : 'Shared · reconnecting…'
+      : view.mode === 'hourly'
+        ? 'Hourly schedule · local'
+        : 'Personal timer · local';
+
+  text('connection', status);
+  text('clock', clock.format(time));
+
+  for (const id of ['toggle', 'reset', 'sync', 'apply']) {
+    $(id).disabled = pending || connecting;
+  }
+}
+
+function tick() {
+  clearTimeout(renderTimeout);
+  render();
+
+  if (!document.hidden) {
+    renderTimeout = setTimeout(
+      tick, 1000 - (Date.now() % 1000) + 5
+    );
+  }
+}
+
+function updateControls() {
+  if (document.activeElement !== $('focus')) {
+    $('focus').value = state.focus;
+  }
+  if (document.activeElement !== $('rest')) {
+    $('rest').value = state.rest;
+  }
+}
+
+function noteAction(type) {
+  text(
+    'message',
+    type === 'sync'
+      ? 'Following the Eastern Time schedule.'
+      : type === 'durations'
+        ? 'Timer lengths updated for everyone in this Activity.'
+        : type === 'pause'
+          ? 'Timer paused.'
+          : type === 'reset'
+            ? 'Timer reset.'
+            : 'Timer running.'
+  );
+}
+
+async function act(type, extra = {}) {
+  if (pending) return;
+
+  if (connecting) {
+    text('message', 'Connecting to the shared timer…');
+    return;
+  }
+
+  try {
+    if (type === 'durations') {
+      change(state, {type, ...extra}, now());
+    }
+
+    if (sharedReady) {
+      pending = true;
+      tick();
+
+      try {
+        await shared.command(type, extra);
+      } catch (error) {
+        text(
+          'message',
+          `Shared update failed: ${error.message}`
+        );
+        await shared.refresh().catch(() => {});
+        return;
+      } finally {
+        pending = false;
+      }
+    } else {
+      state = change(state, {type, ...extra}, now());
+    }
+
+    updateControls();
+    noteAction(type);
+  } catch (error) {
+    text('message', error.message);
+  } finally {
+    tick();
+  }
+}
+
+$('toggle').onclick = () =>
+  act(current(state, now()).running ? 'pause' : 'start');
+
+$('reset').onclick = () => act('reset');
+$('sync').onclick = () => act('sync');
+
+$('durations').onsubmit = event => {
+  event.preventDefault();
+  act('durations', {
+    focus: Number($('focus').value),
+    rest: Number($('rest').value)
+  });
+};
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clearTimeout(renderTimeout);
+  } else {
+    if (sharedReady) {
+      shared.refresh().catch(() => {});
+    }
+    tick();
+  }
+});
+
+window.addEventListener('pageshow', event => {
+  if (event.persisted) shared?.resume();
+  if (sharedReady) shared.refresh().catch(() => {});
+  tick();
+});
+
+window.addEventListener('pagehide', () => shared?.close());
+
+tick();
+
+if (inDiscord && DISCORD_CLIENT_ID) {
+  import('./discord-sdk.js').then(async ({DiscordSDK}) => {
+    const sdk = new DiscordSDK(DISCORD_CLIENT_ID);
+    await sdk.ready();
+
+    $('people').hidden = false;
+    text('members', 'Loading people in this Activity…');
+
+    let receivedUpdate = false;
+
+    const show = ({participants}) => {
+      text(
+        'members',
+        `${participants.length} ${
+          participants.length === 1 ? 'person' : 'people'
+        } in this Activity`
+      );
+      text(
+        'names',
+        participants.map(
+          person => person.global_name || person.username
+        ).join(' · ')
+      );
+    };
+
+    try {
+      await sdk.subscribe(
+        'ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE',
+        data => {
+          receivedUpdate = true;
+          show(data);
+        }
+      );
+
+      const initial =
+        await sdk.commands.getInstanceConnectedParticipants();
+
+      if (!receivedUpdate) show(initial);
+    } catch {
+      if (!receivedUpdate) {
+        text(
+          'members',
+          'Participant list unavailable in this Discord session.'
+        );
+      }
+    }
+
+    if (!SUPABASE_PUBLISHABLE_KEY || !sdk.instanceId) {
+      connecting = false;
+      text(
+        'message',
+        'Shared timer not configured. Using local timer.'
+      );
+      tick();
+      return;
+    }
+
+    const url = location.hostname.endsWith('.discordsays.com')
+      ? `${location.origin}/.proxy/supabase`
+      : SUPABASE_URL;
+
+    shared = new SharedTimer({
+      url,
+      key: SUPABASE_PUBLISHABLE_KEY,
+      instanceId: sdk.instanceId,
+
+      onState: (newState, offset) => {
+        state = newState;
+        serverOffset = offset;
+        sharedReady = true;
+        connecting = false;
+        updateControls();
+        tick();
+      },
+
+      onStatus: (status, error) => {
+        sharedConnection = status;
+        if (error) {
+          text(
+            'message',
+            `Realtime connection issue: ${error.message}`
+          );
+        }
+        tick();
+      }
+    });
+
+    shared.connect();
+
+  }).catch(error => {
+    connecting = false;
+    text(
+      'message',
+      `Discord connection unavailable; local timer active. ${
+        error.message
+      }`
+    );
+    tick();
+  });
+}
