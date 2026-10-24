@@ -322,3 +322,16 @@ footer {
   }
 }
 
+
+/* Allow settings to scroll inside Discord */
+main {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Ensure menus follow light and dark themes */
+.sound-row select {
+  color: inherit;
+}
+
+
