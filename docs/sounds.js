@@ -111,13 +111,24 @@
     try {
       audio ||= new Audio();
       loadClip(audio).catch(() => {});
-      if (audio.state === 'suspended') audio.resume().catch(() => {});
+      const soundEnabled = () => {
+        if (audio.state === 'running') {
+          document.getElementById('enable-sound')?.remove();
+        }
+      };
+      
+      if (audio.state === 'suspended') {
+        audio.resume().then(soundEnabled).catch(() => {});
+      } else {
+        soundEnabled();
+      }
+      
       return audio;
     } catch { return null; }
   }
 
-  document.addEventListener('pointerdown', unlockAudio, {once:true, capture:true});
-  document.addEventListener('keydown', unlockAudio, {once:true, capture:true});
+  document.addEventListener('pointerdown', unlockAudio, {capture:true});
+  document.addEventListener('keydown', unlockAudio, {capture:true});
 
   function playNote(name, step, when) {
     const p = presets[name];
