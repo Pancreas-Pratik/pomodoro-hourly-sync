@@ -445,3 +445,30 @@ main {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+
+/* Volume control inside Settings */
+.sound-volume {
+  margin: 16px 0;
+}
+
+.sound-volume label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+#soundVolume {
+  display: block;
+  width: 100%;
+  margin: 12px 0 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+#soundVolumeValue {
+  font-variant-numeric: tabular-nums;
+}
+
