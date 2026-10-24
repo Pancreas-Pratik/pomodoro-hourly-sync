@@ -274,6 +274,7 @@ if (inDiscord && DISCORD_CLIENT_ID) {
       });
 
       // Show participants on the main page
+
       const show = ({ participants = [] } = {}) => {
         text(
           'members',
@@ -281,14 +282,44 @@ if (inDiscord && DISCORD_CLIENT_ID) {
             participants.length === 1 ? 'person' : 'people'
           } in this Activity`
         );
-
-        text(
-          'names',
-          participants
-            .map(p => p.global_name || p.username)
-            .join(' · ')
-        );
+      
+        const container = $('names');
+        container.replaceChildren();
+      
+        container.style.display = 'flex';
+        container.style.justifyContent = 'center';
+        container.style.flexWrap = 'wrap';
+        container.style.gap = '16px';
+      
+        participants.forEach(person => {
+          const item = document.createElement('span');
+          item.style.display = 'inline-flex';
+          item.style.alignItems = 'center';
+          item.style.gap = '8px';
+      
+          const name =
+            person.global_name || person.username || 'Participant';
+      
+          if (person.avatar && person.id) {
+            const avatar = document.createElement('img');
+            avatar.src =
+              `https://cdn.discordapp.com/avatars/${person.id}/${person.avatar}.png?size=64`;
+            avatar.width = 32;
+            avatar.height = 32;
+            avatar.alt = '';
+            avatar.style.borderRadius = '50%';
+            avatar.style.objectFit = 'cover';
+            item.appendChild(avatar);
+          }
+      
+          const label = document.createElement('span');
+          label.textContent = name;
+          item.appendChild(label);
+      
+          container.appendChild(item);
+        });
       };
+
 
       const participants =
         await sdk.commands
