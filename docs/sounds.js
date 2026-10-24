@@ -8,6 +8,7 @@
   if (!beforeBreak || !beforeFocus || !countdown || !phaseLabel || !toggle) return;
 
   const choices = [
+    ['countdown15', 'One Sun One Moon · 15 seconds'],
     ['off', 'Off'],
     ['chime', 'Gentle chime'],
     ['bell', 'Soft bell'],
@@ -43,21 +44,73 @@
   for (const select of [beforeBreak, beforeFocus]) {
     const previous = select.value;
     let saved;
-    try { saved = localStorage.getItem('pomo-' + select.id); } catch {}
+    try { saved = localStorage.getItem('pomo-15s-' + select.id); } catch {}
     select.replaceChildren(...choices.map(([value, label]) => new Option(label, value)));
     select.value = choices.some(([value]) => value === saved) ? saved
-      : choices.some(([value]) => value === previous) ? previous : 'off';
+      : 'countdown15';
     select.addEventListener('change', () => {
-      try { localStorage.setItem('pomo-' + select.id, select.value); } catch {}
+      try { localStorage.setItem('pomo-15s-' + select.id, select.value); } catch {}
     });
   }
 
   let audio;
+  let clipBuffer;
+  let clipLoading;
+  let clipSource;
+  let clipGeneration = 0;
+  function stopClip() {
+    clipGeneration++;
+    if (clipSource) {
+      try { clipSource.stop(); } catch {}
+      clipSource.disconnect();
+      clipSource = null;
+    }
+  }
+  function loadClip(ctx) {
+    if (clipBuffer) return Promise.resolve(clipBuffer);
+    if (!clipLoading) {
+      clipLoading = fetch('./countdown-15s.mp3')
+        .then(response => {
+          if (!response.ok) throw new Error('Countdown audio unavailable');
+          return response.arrayBuffer();
+        })
+        .then(bytes => ctx.decodeAudioData(bytes))
+        .then(buffer => (clipBuffer = buffer))
+        .catch(error => { clipLoading = null; throw error; });
+    }
+    return clipLoading;
+  }
+  async function playClip(seconds = 15) {
+    stopClip();
+    const generation = clipGeneration;
+    const ctx = audio;
+    if (!ctx || ctx.state !== 'running') return;
+    const requestedAt = performance.now();
+    try {
+      const buffer = await loadClip(ctx);
+      if (generation !== clipGeneration) return;
+      const remaining = seconds - (performance.now() - requestedAt) / 1000;
+      const offset = Math.max(0, 15 - remaining);
+      if (remaining <= 0 || offset >= buffer.duration) return;
+      clipSource = ctx.createBufferSource();
+      clipSource.buffer = buffer;
+      clipSource.connect(ctx.destination);
+      clipSource.start(0, offset, Math.min(remaining, buffer.duration - offset));
+    } catch (error) { console.warn(error.message); }
+  }
+  for (const select of [beforeBreak, beforeFocus]) {
+    select.addEventListener('change', stopClip);
+  }
+  for (const id of ['toggle', 'reset', 'sync']) {
+    document.getElementById(id)?.addEventListener('click', stopClip);
+  }
+  document.getElementById('durations')?.addEventListener('submit', stopClip);
   function unlockAudio() {
     const Audio = window.AudioContext || window.webkitAudioContext;
     if (!Audio) return null;
     try {
       audio ||= new Audio();
+      loadClip(audio).catch(() => {});
       if (audio.state === 'suspended') audio.resume().catch(() => {});
       return audio;
     } catch { return null; }
@@ -104,6 +157,8 @@
         try { await ctx.resume(); } catch { return; }
       }
       if (ctx.state !== 'running') return;
+      if (selected.value === 'countdown15') { playClip(); return; }
+      stopClip();
       const start = ctx.currentTime + 0.08;
       for (let step = 0; step < 3; step++) {
         playNote(selected.value, step, start + step * 0.65);
@@ -128,11 +183,23 @@
     if (phase !== lastPhase ||
         (lastRemaining !== null && seconds > lastRemaining + 1)) {
       played.clear();
+      stopClip();
     }
     lastPhase = phase;
     lastRemaining = seconds;
 
-    if (!running || !['focus', 'break'].includes(phase)) return;
+    if (!running || !['focus', 'break'].includes(phase)) {
+      played.clear(); stopClip(); return;
+    }
+    const selectedSound = phase === 'focus' ? beforeBreak.value : beforeFocus.value;
+    if (selectedSound === 'countdown15') {
+      if (seconds > 15) { played.clear(); return; }
+      if (seconds >= 1 && !played.has('clip') && audio?.state === 'running') {
+        played.add('clip');
+        playClip(seconds);
+      }
+      return;
+    }
     if (seconds > 3) played.clear();
     if (seconds < 1 || seconds > 3 || played.has(seconds)) return;
 
