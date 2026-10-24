@@ -54,7 +54,26 @@
     <button type="button" data-test-sound="beforeFocusSound">Test</button>
   </div>
 
-  <p class="hint">Gentle sounds at 3, 2, and 1 seconds remaining.</p>
+
+<div class="sound-volume">
+  <label for="soundVolume">
+    Volume
+    <output id="soundVolumeValue" for="soundVolume">100%</output>
+  </label>
+  <input
+    id="soundVolume"
+    type="range"
+    min="0"
+    max="100"
+    step="5"
+    value="100"
+  >
+</div>
+
+
+  
+  
+  <p class="hint">Gentle sounds at 3, 2, and 1 seconds remaining or 15-second One Sun One Moon timer.</p>
 </div>
 
 
