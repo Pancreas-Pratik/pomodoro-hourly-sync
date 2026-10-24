@@ -1,5 +1,8 @@
 
-const selector = document.getElementById("theme");
+const buttons = document.querySelectorAll(
+  "[data-theme-option]"
+);
+
 const system = window.matchMedia(
   "(prefers-color-scheme: dark)"
 );
@@ -22,24 +25,30 @@ function applyTheme() {
       : theme;
 
   document.documentElement.dataset.theme = appearance;
+
+  buttons.forEach(button => {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.themeOption === theme)
+    );
+  });
 }
 
-selector.value = theme;
+buttons.forEach(button => {
+  button.addEventListener("click", () => {
+    theme = button.dataset.themeOption;
 
-selector.addEventListener("change", () => {
-  theme = selector.value;
+    try {
+      if (theme === "system") {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, theme);
+      }
+    } catch {}
 
-  try {
-    if (theme === "system") {
-      localStorage.removeItem(key);
-    } else {
-      localStorage.setItem(key, theme);
-    }
-  } catch {}
-
-  applyTheme();
+    applyTheme();
+  });
 });
 
 system.addEventListener("change", applyTheme);
-
 applyTheme();
