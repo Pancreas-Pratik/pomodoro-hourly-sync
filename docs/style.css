@@ -416,4 +416,12 @@ header h1 {
   }
 }
 
+/* Show Discord participants on small screens */
+#people:not([hidden]) {
+  display: block;
+}
 
+/* Allow scrolling when the Activity is compact */
+main {
+  overflow-y: auto;
+}
