@@ -259,7 +259,7 @@ if (inDiscord && DISCORD_CLIENT_ID) {
       );
 
       const initial =
-        await sdk.commands.getInstanceConnectedParticipants();
+        await sdk.commands.getActivityInstanceConnectedParticipants();
 
       if (!receivedUpdate) show(initial);
     } catch {
