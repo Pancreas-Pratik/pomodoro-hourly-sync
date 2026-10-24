@@ -114,6 +114,93 @@
 
 
   
+  // Restore 15-second audio and Test playback
+  let clipBuffer;
+  let clipLoading;
+  let clipSource;
+  let clipGeneration = 0;
+
+  function stopClip() {
+    clipGeneration++;
+
+    if (clipSource) {
+      try { clipSource.stop(); } catch {}
+      clipSource.disconnect();
+      clipSource = null;
+    }
+  }
+
+  function loadClip(ctx) {
+    if (clipBuffer) return Promise.resolve(clipBuffer);
+
+    if (!clipLoading) {
+      clipLoading = fetch('./countdown-15s.mp3')
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('15-second sound file not found');
+          }
+          return response.arrayBuffer();
+        })
+        .then(bytes => ctx.decodeAudioData(bytes))
+        .then(buffer => (clipBuffer = buffer))
+        .catch(error => {
+          clipLoading = null;
+          throw error;
+        });
+    }
+
+    return clipLoading;
+  }
+
+  async function playClip(seconds = 15) {
+    stopClip();
+
+    const generation = clipGeneration;
+    const ctx = audio;
+
+    if (!ctx || ctx.state !== 'running' || !masterGain) return;
+
+    const requestedAt = performance.now();
+
+    try {
+      const buffer = await loadClip(ctx);
+      if (generation !== clipGeneration) return;
+
+      const remaining =
+        seconds - (performance.now() - requestedAt) / 1000;
+
+      const offset = Math.max(0, 15 - remaining);
+
+      if (remaining <= 0 || offset >= buffer.duration) return;
+
+      clipSource = ctx.createBufferSource();
+      clipSource.buffer = buffer;
+
+      // Route through the volume slider
+      clipSource.connect(masterGain);
+
+      clipSource.start(
+        0,
+        offset,
+        Math.min(remaining, buffer.duration - offset)
+      );
+    } catch (error) {
+      console.error('15-second sound could not play:', error);
+    }
+  }
+
+  // Stop old sounds when timer settings change
+  for (const select of [beforeBreak, beforeFocus]) {
+    select.addEventListener('change', stopClip);
+  }
+
+  for (const id of ['toggle', 'reset', 'sync']) {
+    document.getElementById(id)?.addEventListener('click', stopClip);
+  }
+
+  document.getElementById('durations')
+    ?.addEventListener('submit', stopClip);
+
 
   
   function unlockAudio() {
