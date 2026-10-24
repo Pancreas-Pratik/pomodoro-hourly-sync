@@ -54,122 +54,94 @@
   }
 
   
+
   let audio;
   let masterGain;
-  
-  // Saved volume preference (0–100%)
-  const volumeSlider = document.getElementById('soundVolume');
-  const volumeValue = document.getElementById('soundVolumeValue');
-  
-  let volume = 100;
+  let volumePercent = 100;
   
   try {
     const saved = localStorage.getItem('pomo-sound-volume');
     if (saved !== null && Number.isFinite(Number(saved))) {
-      volume = Math.max(0, Math.min(100, Number(saved)));
+      volumePercent = Math.max(0, Math.min(100, Number(saved)));
     }
   } catch {}
   
-  if (volumeSlider && volumeValue) {
-    volumeSlider.value = String(volume);
-    volumeValue.textContent = `${volume}%`;
+  function setSoundVolume(value, save = true) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return;
   
-    volumeSlider.addEventListener('input', () => {
-      volume = Number(volumeSlider.value);
-      volumeValue.textContent = `${volume}%`;
+    volumePercent = Math.max(0, Math.min(100, number));
   
-      if (audio && masterGain) {
-        masterGain.gain.setTargetAtTime(
-          volume / 100,
-          audio.currentTime,
-          0.015
-        );
-      }
+    const slider = document.getElementById('soundVolume');
+    const label = document.getElementById('soundVolumeValue');
   
+    if (slider) slider.value = String(volumePercent);
+    if (label) label.textContent = `${volumePercent}%`;
+  
+    // Change volume immediately, including during playback.
+    if (audio && masterGain) {
+      masterGain.gain.setTargetAtTime(
+        volumePercent / 100,
+        audio.currentTime,
+        0.015
+      );
+    }
+  
+    // Also handle HTML audio elements, if used.
+    document.querySelectorAll('audio[data-pomo-sound]')
+      .forEach(player => {
+        player.volume = volumePercent / 100;
+      });
+  
+    if (save) {
       try {
-        localStorage.setItem('pomo-sound-volume', String(volume));
+        localStorage.setItem(
+          'pomo-sound-volume',
+          String(volumePercent)
+        );
       } catch {}
-    });
+    }
   }
+  
+  // Event delegation also works if Settings moves the slider.
+  document.addEventListener('input', event => {
+    if (event.target.id === 'soundVolume') {
+      setSoundVolume(event.target.value);
+    }
+  });
+  
+  setSoundVolume(volumePercent, false);
 
-  let clipBuffer;
-  let clipLoading;
-  let clipSource;
-  let clipGeneration = 0;
-  function stopClip() {
-    clipGeneration++;
-    if (clipSource) {
-      try { clipSource.stop(); } catch {}
-      clipSource.disconnect();
-      clipSource = null;
-    }
-  }
-  function loadClip(ctx) {
-    if (clipBuffer) return Promise.resolve(clipBuffer);
-    if (!clipLoading) {
-      clipLoading = fetch('./countdown-15s.mp3')
-        .then(response => {
-          if (!response.ok) throw new Error('Countdown audio unavailable');
-          return response.arrayBuffer();
-        })
-        .then(bytes => ctx.decodeAudioData(bytes))
-        .then(buffer => (clipBuffer = buffer))
-        .catch(error => { clipLoading = null; throw error; });
-    }
-    return clipLoading;
-  }
-  async function playClip(seconds = 15) {
-    stopClip();
-    const generation = clipGeneration;
-    const ctx = audio;
-    if (!ctx || ctx.state !== 'running') return;
-    const requestedAt = performance.now();
-    try {
-      const buffer = await loadClip(ctx);
-      if (generation !== clipGeneration) return;
-      const remaining = seconds - (performance.now() - requestedAt) / 1000;
-      const offset = Math.max(0, 15 - remaining);
-      if (remaining <= 0 || offset >= buffer.duration) return;
-      clipSource = ctx.createBufferSource();
-      clipSource.buffer = buffer;
-      clipSource.connect(masterGain);
-      clipSource.start(0, offset, Math.min(remaining, buffer.duration - offset));
-    } catch (error) { console.warn(error.message); }
-  }
-  for (const select of [beforeBreak, beforeFocus]) {
-    select.addEventListener('change', stopClip);
-  }
-  for (const id of ['toggle', 'reset', 'sync']) {
-    document.getElementById(id)?.addEventListener('click', stopClip);
-  }
-  document.getElementById('durations')?.addEventListener('submit', stopClip);
+
+  
+
   function unlockAudio() {
-    const Audio = window.AudioContext || window.webkitAudioContext;
-    if (!Audio) return null;
+    const AudioContextClass =
+      window.AudioContext || window.webkitAudioContext;
+  
+    if (!AudioContextClass) return null;
+  
     try {
       if (!audio) {
-        audio = new Audio();
-      
+        audio = new AudioContextClass();
+  
+        // All sounds pass through this master volume node.
         masterGain = audio.createGain();
-        masterGain.gain.value = volume / 100;
+        masterGain.gain.value = volumePercent / 100;
         masterGain.connect(audio.destination);
       }
-      loadClip(audio).catch(() => {});
-      const soundEnabled = () => {
-        if (audio.state === 'running') {
-          document.getElementById('enable-sound')?.remove();
-        }
-      };
-      
+  
       if (audio.state === 'suspended') {
-        audio.resume().then(soundEnabled).catch(() => {});
-      } else {
-        soundEnabled();
+        audio.resume().catch(() => {});
       }
-      
+  
       return audio;
-    } catch { return null; }
+    } catch (error) {
+      console.error('Audio unavailable:', error);
+      return null;
+    }
   }
+
 
   document.addEventListener('pointerdown', unlockAudio, {capture:true});
   document.addEventListener('keydown', unlockAudio, {capture:true});
