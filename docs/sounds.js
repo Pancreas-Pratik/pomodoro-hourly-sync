@@ -53,7 +53,45 @@
     });
   }
 
+  
   let audio;
+  let masterGain;
+  
+  // Saved volume preference (0–100%)
+  const volumeSlider = document.getElementById('soundVolume');
+  const volumeValue = document.getElementById('soundVolumeValue');
+  
+  let volume = 100;
+  
+  try {
+    const saved = localStorage.getItem('pomo-sound-volume');
+    if (saved !== null && Number.isFinite(Number(saved))) {
+      volume = Math.max(0, Math.min(100, Number(saved)));
+    }
+  } catch {}
+  
+  if (volumeSlider && volumeValue) {
+    volumeSlider.value = String(volume);
+    volumeValue.textContent = `${volume}%`;
+  
+    volumeSlider.addEventListener('input', () => {
+      volume = Number(volumeSlider.value);
+      volumeValue.textContent = `${volume}%`;
+  
+      if (audio && masterGain) {
+        masterGain.gain.setTargetAtTime(
+          volume / 100,
+          audio.currentTime,
+          0.015
+        );
+      }
+  
+      try {
+        localStorage.setItem('pomo-sound-volume', String(volume));
+      } catch {}
+    });
+  }
+
   let clipBuffer;
   let clipLoading;
   let clipSource;
