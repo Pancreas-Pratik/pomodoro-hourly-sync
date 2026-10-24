@@ -25,14 +25,16 @@
     </form>
     <p class="hint">Applying lengths restarts focus. Pausing leaves hourly sync.</p>
     
+
 <div class="theme-setting">
-  <label for="theme">Appearance</label>
-  <select id="theme">
-    <option value="system">System</option>
-    <option value="light">Light</option>
-    <option value="dark">Dark</option>
-  </select>
+  <label>Appearance</label>
+  <div class="theme-switch" role="group" aria-label="Appearance">
+    <button type="button" data-theme-option="system">System</button>
+    <button type="button" data-theme-option="light">Light</button>
+    <button type="button" data-theme-option="dark">Dark</button>
+  </div>
 </div>
+
 
   </section>
   <p id="message" role="status" aria-live="polite"></p>
