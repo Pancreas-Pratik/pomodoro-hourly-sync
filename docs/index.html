@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="dark light"><meta name="description" content="A minimal Pomodoro timer aligned to the hour.">
-  <title>Minimal Pomo</title><link rel="stylesheet" href="./style.css?v=5"><script type="module" src="./app.js"></script>
-<script defer src="./theme.js?v=5"></script>
-  <script defer src="./sounds.js?v=1"></script>
+  <title>Minimal Pomo</title><link rel="stylesheet" href="./style.css?v=6"><script type="module" src="./app.js"></script>
+<script defer src="./theme.js?v=6"></script>
+  <script defer src="./sounds.js?v=2"></script>
 </head>
 <body>
 <main>
@@ -34,6 +34,25 @@
     <button type="button" data-theme-option="light">Light</button>
     <button type="button" data-theme-option="dark">Dark</button>
   </div>
+</div>
+
+    
+<div class="sound-settings">
+  <p class="sound-heading">Break notifications</p>
+
+  <div class="sound-row">
+    <label for="beforeBreakSound">Before break</label>
+    <select id="beforeBreakSound"></select>
+    <button type="button" data-test-sound="beforeBreakSound">Test</button>
+  </div>
+
+  <div class="sound-row">
+    <label for="beforeFocusSound">Before focus</label>
+    <select id="beforeFocusSound"></select>
+    <button type="button" data-test-sound="beforeFocusSound">Test</button>
+  </div>
+
+  <p class="hint">Gentle alerts at 3, 2, and 1 seconds remaining.</p>
 </div>
 
 
