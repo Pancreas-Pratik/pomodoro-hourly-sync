@@ -425,3 +425,23 @@ header h1 {
 main {
   overflow-y: auto;
 }
+
+
+/* Participant list on main screen */
+.timer #people:not([hidden]) {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+
+.timer #members {
+  font-weight: 600;
+}
+
+.timer #names {
+  margin-top: 5px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
