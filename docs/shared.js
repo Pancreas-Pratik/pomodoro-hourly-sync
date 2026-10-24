@@ -26,7 +26,6 @@ export class SharedTimer {
         method: 'POST',
         headers: {
           'apikey': this.key,
-          'Authorization': `Bearer ${this.key}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
