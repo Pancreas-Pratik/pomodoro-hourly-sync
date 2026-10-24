@@ -43,10 +43,19 @@
     content.appendChild(schedule.nextSibling);
   }
 
-  // Move status information into the popout too.
-  for (const id of ['message', 'people']) {
-    const item = document.getElementById(id);
-    if (item) content.appendChild(item);
+
+  /* Show participants on the main timer screen only */
+  const people = document.getElementById('people');
+  const controls = document.querySelector('.timer .controls');
+  
+  if (people && controls) {
+    controls.insertAdjacentElement('afterend', people);
+  }
+  
+  /* Keep ordinary status messages in Settings */
+  const message = document.getElementById('message');
+  if (message) {
+    content.appendChild(message);
   }
 
   gear.addEventListener('click', () => dialog.showModal());
