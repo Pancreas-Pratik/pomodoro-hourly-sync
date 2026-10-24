@@ -232,44 +232,57 @@ if (inDiscord && DISCORD_CLIENT_ID) {
     $('people').hidden = false;
     text('members', 'Loading people in this Activity…');
 
-    let receivedUpdate = false;
 
-    const show = ({participants}) => {
+    // Display Discord participants on the main page
+    const show = ({ participants = [] } = {}) => {
       text(
         'members',
         `${participants.length} ${
           participants.length === 1 ? 'person' : 'people'
         } in this Activity`
       );
+
       text(
         'names',
-        participants.map(
-          person => person.global_name || person.username
-        ).join(' · ')
+        participants
+          .map(person =>
+            person.global_name || person.username
+          )
+          .join(' · ')
       );
     };
 
+    // First, retrieve the current participants
+    try {
+      const result =
+        await sdk.commands
+          .getActivityInstanceConnectedParticipants();
+
+      show(result);
+    } catch (error) {
+      console.error('Discord participant lookup:', error);
+
+      text(
+        'members',
+        `Participant error: ${
+          error?.message || String(error)
+        }`
+      );
+    }
+
+    // Then, listen for people joining or leaving
     try {
       await sdk.subscribe(
         'ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE',
-        data => {
-          receivedUpdate = true;
-          show(data);
-        }
+        show
       );
-
-      const initial =
-        await sdk.commands.getActivityInstanceConnectedParticipants();
-
-      if (!receivedUpdate) show(initial);
-    } catch {
-      if (!receivedUpdate) {
-        text(
-          'members',
-          'Participant list unavailable in this Discord session.'
-        );
-      }
+    } catch (error) {
+      console.warn(
+        'Participant updates unavailable:',
+        error
+      );
     }
+
 
     if (!SUPABASE_PUBLISHABLE_KEY || !sdk.instanceId) {
       connecting = false;
