@@ -229,59 +229,92 @@ if (inDiscord && DISCORD_CLIENT_ID) {
     const sdk = new DiscordSDK(DISCORD_CLIENT_ID);
     await sdk.ready();
 
+
     $('people').hidden = false;
-    text('members', 'Loading people in this Activity…');
+    text('members', 'Connecting Discord participants…');
 
-
-    // Display Discord participants on the main page
-    const show = ({ participants = [] } = {}) => {
-      text(
-        'members',
-        `${participants.length} ${
-          participants.length === 1 ? 'person' : 'people'
-        } in this Activity`
-      );
-
-      text(
-        'names',
-        participants
-          .map(person =>
-            person.global_name || person.username
-          )
-          .join(' · ')
-      );
-    };
-
-    // First, retrieve the current participants
     try {
-      const result =
+      // Request permission to identify the Discord user
+      const { code } = await sdk.commands.authorize({
+        client_id: DISCORD_CLIENT_ID,
+        response_type: 'code',
+        state: '',
+        prompt: 'none',
+        scope: ['identify']
+      });
+
+      // Exchange authorization code securely via Supabase
+      const authUrl =
+        location.hostname.endsWith('.discordsays.com')
+          ? `${location.origin}/.proxy/supabase`
+          : SUPABASE_URL;
+
+      const response = await fetch(
+        `${authUrl}/functions/v1/discord-token`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_PUBLISHABLE_KEY
+          },
+          body: JSON.stringify({ code })
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.access_token) {
+        throw new Error(
+          result.error || 'Discord token exchange failed'
+        );
+      }
+
+      await sdk.commands.authenticate({
+        access_token: result.access_token
+      });
+
+      // Show participants on the main page
+      const show = ({ participants = [] } = {}) => {
+        text(
+          'members',
+          `${participants.length} ${
+            participants.length === 1 ? 'person' : 'people'
+          } in this Activity`
+        );
+
+        text(
+          'names',
+          participants
+            .map(p => p.global_name || p.username)
+            .join(' · ')
+        );
+      };
+
+      const participants =
         await sdk.commands
           .getActivityInstanceConnectedParticipants();
 
-      show(result);
-    } catch (error) {
-      console.error('Discord participant lookup:', error);
+      show(participants);
 
+      try {
+        await sdk.subscribe(
+          'ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE',
+          show
+        );
+      } catch (error) {
+        console.warn('Live participant updates:', error);
+      }
+
+    } catch (error) {
+      console.error('Discord authentication:', error);
       text(
         'members',
-        `Participant error: ${
+        `Discord participants unavailable: ${
           error?.message || String(error)
         }`
       );
     }
 
-    // Then, listen for people joining or leaving
-    try {
-      await sdk.subscribe(
-        'ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE',
-        show
-      );
-    } catch (error) {
-      console.warn(
-        'Participant updates unavailable:',
-        error
-      );
-    }
 
 
     if (!SUPABASE_PUBLISHABLE_KEY || !sdk.instanceId) {
