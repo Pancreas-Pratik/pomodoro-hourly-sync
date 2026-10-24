@@ -132,7 +132,7 @@
       if (remaining <= 0 || offset >= buffer.duration) return;
       clipSource = ctx.createBufferSource();
       clipSource.buffer = buffer;
-      clipSource.connect(ctx.destination);
+      clipSource.connect(masterGain);
       clipSource.start(0, offset, Math.min(remaining, buffer.duration - offset));
     } catch (error) { console.warn(error.message); }
   }
@@ -147,7 +147,13 @@
     const Audio = window.AudioContext || window.webkitAudioContext;
     if (!Audio) return null;
     try {
-      audio ||= new Audio();
+      if (!audio) {
+        audio = new Audio();
+      
+        masterGain = audio.createGain();
+        masterGain.gain.value = volume / 100;
+        masterGain.connect(audio.destination);
+      }
       loadClip(audio).catch(() => {});
       const soundEnabled = () => {
         if (audio.state === 'running') {
@@ -189,7 +195,7 @@
       gain.gain.linearRampToValueAtTime(p.volume * amount, when + p.attack);
       gain.gain.exponentialRampToValueAtTime(0.0001, when + p.duration);
       oscillator.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(masterGain);
       oscillator.start(when);
       oscillator.stop(when + p.duration + 0.02);
     }
