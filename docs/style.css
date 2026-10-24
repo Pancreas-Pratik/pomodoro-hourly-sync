@@ -269,3 +269,56 @@ footer {
   outline-offset: 2px;
 }
 
+
+.sound-settings {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.sound-heading {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 14px;
+}
+
+.sound-row {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sound-row label {
+  font-size: 12px;
+}
+
+.sound-row select {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.sound-row button {
+  padding: 8px 10px;
+  min-height: 44px;
+  font-size: 12px;
+}
+
+@media (max-width: 380px) {
+  .sound-row {
+    grid-template-columns: 1fr auto;
+  }
+  .sound-row label {
+    grid-column: 1 / -1;
+  }
+}
+
