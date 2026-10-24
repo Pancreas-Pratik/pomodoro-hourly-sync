@@ -4,6 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="dark light"><meta name="description" content="A minimal Pomodoro timer aligned to the hour.">
   <title>Minimal Pomo</title><link rel="stylesheet" href="./style.css?v=3"><script type="module" src="./app.js"></script>
+<script defer src="./theme.js"></script>
 </head>
 <body>
 <main>
@@ -23,6 +24,16 @@
       <button id="apply" type="submit">Apply</button>
     </form>
     <p class="hint">Applying lengths restarts focus. Pausing leaves hourly sync.</p>
+    
+<div class="theme-setting">
+  <label for="theme">Appearance</label>
+  <select id="theme">
+    <option value="system">System</option>
+    <option value="light">Light</option>
+    <option value="dark">Dark</option>
+  </select>
+</div>
+
   </section>
   <p id="message" role="status" aria-live="polite"></p>
   <section id="people" aria-label="People in this Activity" hidden><span id="members" role="status"></span><p id="names"></p></section>
