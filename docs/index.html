@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark light"><meta name="description" content="A minimal Pomodoro timer aligned to the hour.">
+  <title>Minimal Pomo</title><link rel="stylesheet" href="./style.css"><script type="module" src="./app.js"></script>
+</head>
+<body>
+<main>
+  <header><h1>pomo<span aria-hidden="true">.</span></h1><span id="connection" role="status">Eastern Time</span></header>
+  <section class="timer" aria-label="Pomodoro timer">
+    <p id="phase" aria-live="polite">Focus</p>
+    <div id="countdown" role="timer" aria-label="Time remaining">50:00</div>
+    <p id="next">Focus :00–:50 · Break :50–:00</p>
+    <div class="controls"><button id="toggle" class="primary">Start</button><button id="reset">Reset</button></div>
+  </section>
+  <section class="settings" aria-label="Timer settings">
+    <button id="sync" aria-describedby="schedule">Synchronize to the hour <span aria-hidden="true">↗</span></button>
+    <p id="schedule">Focus :00–:50 · Break :50–:00 · Eastern Time</p>
+    <form id="durations">
+      <label for="focus">Focus <span class="input-wrap"><input id="focus" name="focus" type="number" min="1" max="180" step="1" value="50" required><span>min</span></span></label>
+      <label for="rest">Break <span class="input-wrap"><input id="rest" name="rest" type="number" min="1" max="180" step="1" value="10" required><span>min</span></span></label>
+      <button id="apply" type="submit">Apply</button>
+    </form>
+    <p class="hint">Applying lengths restarts focus. Pausing leaves hourly sync.</p>
+  </section>
+  <p id="message" role="status" aria-live="polite"></p>
+  <section id="people" aria-label="People in this Activity" hidden><span id="members" role="status"></span><p id="names"></p></section>
+  <footer><span>Controls affect only your timer.</span><span id="clock"></span></footer>
+</main>
+</body>
+</html>
