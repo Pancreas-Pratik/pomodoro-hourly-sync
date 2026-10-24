@@ -233,3 +233,39 @@ footer {
   outline-offset: 3px;
 }
 
+
+/* Three-way appearance toggle */
+.theme-switch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.theme-switch button {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: inherit;
+  opacity: 0.65;
+  padding: 8px 13px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.theme-switch button[aria-pressed="true"] {
+  background: #5865f2;
+  color: white;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.theme-switch button:focus-visible {
+  outline: 2px solid #5865f2;
+  outline-offset: 2px;
+}
+
