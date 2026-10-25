@@ -10,21 +10,22 @@ const url = location.hostname.endsWith('.discordsays.com')
   ? `${location.origin}/.proxy/supabase`
   : SUPABASE_URL;
 
-const storedName = (() => {
+const getSavedName = () => {
   try {
     return localStorage.getItem('pomo-study-name') || '';
   } catch {
     return '';
   }
-})();
+};
 
 let boardKey = null;
-let name = storedName.trim();
+let name = getSavedName().trim();
 let sessionId = null;
 let reading = false;
-let doingTask = false;
+let writing = false;
+let interaction = null;
 
-// Styles for the Study Board and Settings name field
+// Interface styling
 const style = document.createElement('style');
 
 style.textContent = `
@@ -63,11 +64,11 @@ style.textContent = `
 #study-dialog::backdrop {
   background:rgba(0,0,0,.65);
 }
-.study-top {
+.study-top,.study-person-head {
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:12px;
+  gap:10px;
 }
 .study-top h2 {
   margin:0;
@@ -106,11 +107,7 @@ style.textContent = `
   padding:13px 0 4px;
 }
 .study-person-head {
-  display:flex;
   flex-wrap:wrap;
-  justify-content:space-between;
-  align-items:center;
-  gap:6px;
   margin-bottom:9px;
 }
 .study-person-head strong {
@@ -124,19 +121,51 @@ style.textContent = `
 .study-row {
   display:flex;
   align-items:center;
-  gap:9px;
+  gap:8px;
   margin:8px 0;
   font-size:13px;
 }
-.study-row input {
+.study-row input[type=checkbox] {
   width:17px;
   height:17px;
   flex:0 0 17px;
   accent-color:var(--accent);
 }
-.study-row span {
+.study-task-text {
   flex:1;
+  min-width:0;
   overflow-wrap:anywhere;
+}
+.study-task-text[data-editable=true] {
+  cursor:text;
+}
+.study-task-text[data-editable=true]:focus-visible {
+  outline:2px solid var(--accent);
+  outline-offset:3px;
+}
+.study-inline-edit {
+  flex:1;
+  min-width:0;
+  padding:5px 7px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  font:inherit;
+}
+.study-grip {
+  flex:0 0 auto;
+  padding:5px 4px;
+  opacity:.55;
+  cursor:grab;
+  touch-action:none;
+  user-select:none;
+  font-size:16px;
+  letter-spacing:-4px;
+}
+.study-grip:active {
+  cursor:grabbing;
+}
+.study-row.is-dragging {
+  opacity:.55;
 }
 .study-row button {
   min-height:26px;
@@ -151,32 +180,32 @@ style.textContent = `
 
 document.head.appendChild(style);
 
-// Add the name field directly inside existing Settings
+// Name field inside Settings
 const nameBox = document.createElement('section');
 nameBox.id = 'study-name-box';
 
 nameBox.innerHTML = `
   <label for="study-name">Your study name</label>
-  <input
-    id="study-name"
-    maxlength="40"
+  <input id="study-name" maxlength="40"
     placeholder="Enter your name"
-    autocomplete="nickname"
-  >
+    autocomplete="nickname">
   <p class="hint">
-    Use the same name on all devices to share tasks and
-    daily Activity time. No login.
+    Use the same name on all devices to share tasks
+    and daily Activity time. No login.
   </p>
 `;
 
-(
+const settingsHolder =
   document.querySelector('.settings-dialog-body') ||
-  document.querySelector('.settings')
-)?.prepend(nameBox);
+  document.querySelector('.settings');
 
-$('study-name').value = name;
+settingsHolder?.prepend(nameBox);
 
-// Add the Study Board button under timer controls
+if ($('study-name')) {
+  $('study-name').value = name;
+}
+
+// Main screen Study Board button
 const openButton = document.createElement('button');
 openButton.id = 'study-open';
 openButton.type = 'button';
@@ -185,7 +214,7 @@ openButton.textContent = '☑ Study Board';
 document.querySelector('.timer .controls')
   ?.insertAdjacentElement('afterend', openButton);
 
-// Create the Study Board popup
+// Study Board dialog
 const dialog = document.createElement('dialog');
 dialog.id = 'study-dialog';
 
@@ -206,11 +235,22 @@ dialog.innerHTML = `
 
 document.body.appendChild(dialog);
 
-function status(message) {
+const status = message => {
   $('study-status').textContent = message;
-}
+};
 
-// Supabase requests
+const normalize = value =>
+  value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const el = (tag, value) => {
+  const element = document.createElement(tag);
+  if (value !== undefined) {
+    element.textContent = value;
+  }
+  return element;
+};
+
+// Supabase connection
 async function rpc(method, params, keepalive = false) {
   const response = await fetch(
     `${url}/rest/v1/rpc/${method}`,
@@ -225,22 +265,18 @@ async function rpc(method, params, keepalive = false) {
     }
   );
 
-  const result = await response.json().catch(() => ({}));
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     throw new Error(
-      result.message || `Supabase error ${response.status}`
+      data.message || `Supabase error ${response.status}`
     );
   }
 
-  return result;
+  return data;
 }
 
-function normalized(value) {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-// Record that this person is inside the Activity
+// Activity-time tracking
 async function presence(
   who, id, board, ending = false, keepalive = false
 ) {
@@ -261,13 +297,13 @@ function heartbeat() {
     sessionId = crypto.randomUUID();
   }
 
-  presence(name, sessionId, boardKey).catch(error => {
-    console.warn('Study clock sync:', error);
-
-    if (dialog.open) {
-      status(`Clock: ${error.message}`);
-    }
-  });
+  presence(name, sessionId, boardKey)
+    .catch(error => {
+      console.warn('Study clock sync:', error);
+      if (dialog.open) {
+        status(`Clock: ${error.message}`);
+      }
+    });
 }
 
 function setBoard(nextKey) {
@@ -289,7 +325,6 @@ function setBoard(nextKey) {
   if (dialog.open) refresh();
 }
 
-// Receive the Discord room identifier from app.js
 window.addEventListener(
   'pomo-study-ready',
   event => setBoard(event.detail?.boardKey)
@@ -299,14 +334,12 @@ if (window.pomoStudyBoardKey) {
   setBoard(window.pomoStudyBoardKey);
 }
 
-// Save the study name on this device
-$('study-name').addEventListener('change', () => {
+$('study-name')?.addEventListener('change', () => {
   const nextName = $('study-name').value
-    .trim()
-    .replace(/\s+/g, ' ');
+    .trim().replace(/\s+/g, ' ');
 
   if (
-    normalized(nextName) !== normalized(name) &&
+    normalize(nextName) !== normalize(name) &&
     sessionId && boardKey
   ) {
     presence(name, sessionId, boardKey, true, true)
@@ -326,16 +359,6 @@ $('study-name').addEventListener('change', () => {
   if (dialog.open) refresh();
 });
 
-function el(tag, value) {
-  const element = document.createElement(tag);
-
-  if (value !== undefined) {
-    element.textContent = value;
-  }
-
-  return element;
-}
-
 function hhmmss(seconds) {
   const n = Math.max(0, Math.floor(seconds));
 
@@ -346,23 +369,242 @@ function hhmmss(seconds) {
   ].map(v => String(v).padStart(2, '0')).join(':');
 }
 
-// Refresh displayed HH:MM:SS every second
+// Update visible clocks every second without server requests
 function updateClocks() {
-  dialog.querySelectorAll('.study-time').forEach(clock => {
-    const base = Number(clock.dataset.base) || 0;
-    const started =
-      Number(clock.dataset.updated) || Date.now();
+  dialog.querySelectorAll('.study-time')
+    .forEach(clock => {
+      const base = Number(clock.dataset.base) || 0;
+      const updated =
+        Number(clock.dataset.updated) || Date.now();
 
-    const extra = clock.dataset.active === 'true'
-      ? Math.max(0, (Date.now() - started) / 1000)
-      : 0;
+      const extra = clock.dataset.active === 'true'
+        ? Math.max(0, (Date.now() - updated) / 1000)
+        : 0;
 
-    clock.textContent =
-      `Today · ${hhmmss(base + extra)}`;
+      clock.textContent =
+        `Today · ${hhmmss(base + extra)}`;
+    });
+}
+
+// Existing to-do actions
+async function taskWrite(action, extra = {}) {
+  if (writing) {
+    throw new Error('Another task change is saving');
+  }
+
+  if (!boardKey) {
+    throw new Error('Join this Activity in Discord first');
+  }
+
+  if (!name) {
+    throw new Error('Enter your study name in Settings');
+  }
+
+  writing = true;
+
+  try {
+    return await rpc('pomo_study_write', {
+      p_board_key: boardKey,
+      p_display_name: name,
+      p_action: action,
+      ...extra
+    });
+  } finally {
+    writing = false;
+  }
+}
+
+// NEW: Save inline task renames
+async function renameTask(task, updated) {
+  await rpc('pomo_study_rename', {
+    p_board_key: boardKey,
+    p_display_name: name,
+    p_task_id: task.id,
+    p_task: updated
   });
 }
 
-// Group all to-do items and time under each person
+// NEW: Save task ordering
+async function moveTasks(ids) {
+  await rpc('pomo_study_move', {
+    p_board_key: boardKey,
+    p_display_name: name,
+    p_task_ids: ids
+  });
+}
+
+// NEW: Click task text to edit inline
+function startInlineEdit(label, task) {
+  if (interaction || writing) return;
+
+  interaction = 'edit';
+
+  const input = el('input');
+  input.type = 'text';
+  input.maxLength = 200;
+  input.value = task.text;
+  input.className = 'study-inline-edit';
+
+  label.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let finished = false;
+
+  async function finish(save) {
+    if (finished) return;
+    finished = true;
+
+    const value = input.value.trim();
+    input.replaceWith(label);
+
+    try {
+      if (
+        save && value &&
+        value !== task.text
+      ) {
+        await renameTask(task, value);
+      }
+    } catch (error) {
+      status(`Rename failed: ${error.message}`);
+    } finally {
+      interaction = null;
+      await refresh();
+    }
+  }
+
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      finish(true);
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+
+  input.addEventListener('blur', () => finish(true));
+}
+
+// NEW: Drag tasks to reorder
+function makeDraggable(grip, row, section) {
+  let dragging = false;
+  let originalOrder = [];
+
+  const order = () =>
+    [...section.querySelectorAll('.study-row')]
+      .map(item => Number(item.dataset.taskId));
+
+  grip.addEventListener('pointerdown', event => {
+    if (
+      interaction ||
+      writing ||
+      (event.pointerType === 'mouse' && event.button !== 0)
+    ) return;
+
+    event.preventDefault();
+
+    interaction = 'drag';
+    dragging = true;
+    originalOrder = order();
+
+    row.classList.add('is-dragging');
+    grip.setPointerCapture(event.pointerId);
+  });
+
+  grip.addEventListener('pointermove', event => {
+    if (!dragging) return;
+
+    const target = document.elementFromPoint(
+      event.clientX, event.clientY
+    )?.closest('.study-row');
+
+    if (
+      !target ||
+      target === row ||
+      target.parentElement !== section
+    ) return;
+
+    const bounds = target.getBoundingClientRect();
+    const middle = bounds.top + bounds.height / 2;
+
+    section.insertBefore(
+      row,
+      event.clientY > middle
+        ? target.nextSibling
+        : target
+    );
+  });
+
+  async function stopDragging(save) {
+    if (!dragging) return;
+
+    dragging = false;
+    row.classList.remove('is-dragging');
+
+    const changedOrder = order();
+
+    try {
+      if (
+        save &&
+        changedOrder.join(',') !== originalOrder.join(',')
+      ) {
+        await moveTasks(changedOrder);
+      }
+    } catch (error) {
+      status(`Reorder failed: ${error.message}`);
+    } finally {
+      interaction = null;
+      await refresh();
+    }
+  }
+
+  grip.addEventListener(
+    'pointerup',
+    () => stopDragging(true)
+  );
+
+  grip.addEventListener(
+    'pointercancel',
+    () => stopDragging(false)
+  );
+
+  // Keyboard alternative: focus grip, press Up or Down
+  grip.addEventListener('keydown', async event => {
+    if (
+      !['ArrowUp', 'ArrowDown'].includes(event.key) ||
+      interaction || writing
+    ) return;
+
+    event.preventDefault();
+
+    const current = order();
+    const at = current.indexOf(Number(row.dataset.taskId));
+    const next = at + (
+      event.key === 'ArrowUp' ? -1 : 1
+    );
+
+    if (next < 0 || next >= current.length) return;
+
+    [current[at], current[next]] =
+      [current[next], current[at]];
+
+    interaction = 'drag';
+
+    try {
+      await moveTasks(current);
+    } catch (error) {
+      status(`Reorder failed: ${error.message}`);
+    } finally {
+      interaction = null;
+      await refresh();
+    }
+  });
+}
+
+// Build the grouped Study Board
 function display(snapshot) {
   const holder = $('study-people');
   holder.replaceChildren();
@@ -430,42 +672,102 @@ function display(snapshot) {
     for (const task of person.tasks) {
       const row = el('div');
       row.className = 'study-row';
+      row.dataset.taskId = String(task.id);
 
-      const box = document.createElement('input');
+      const mine = personKey === normalize(name);
+
+      // Drag grip, only for the current person's tasks
+      if (mine) {
+        const grip = el('span', '⋮⋮');
+        grip.className = 'study-grip';
+        grip.title = 'Drag to reorder (or use arrow keys)';
+        grip.tabIndex = 0;
+        grip.setAttribute('role', 'button');
+        grip.setAttribute(
+          'aria-label',
+          `Move ${task.text}`
+        );
+
+        row.appendChild(grip);
+        makeDraggable(grip, row, section);
+      }
+
+      // Checkbox
+      const box = el('input');
       box.type = 'checkbox';
       box.checked = Boolean(task.done);
-
-      box.disabled = personKey !== normalized(name);
+      box.disabled = !mine;
       box.setAttribute('aria-label', task.text);
 
+      box.addEventListener('change', async () => {
+        try {
+          await taskWrite('check', {
+            p_task_id: task.id,
+            p_done: box.checked
+          });
+          await refresh();
+        } catch (error) {
+          status(error.message);
+          box.checked = !box.checked;
+        }
+      });
+
+      row.appendChild(box);
+
+      // Click-to-edit task text
       const label = el('span', task.text);
+      label.className = 'study-task-text';
 
       if (task.done) {
         label.style.textDecoration = 'line-through';
       }
 
-      row.append(box, label);
+      if (mine) {
+        label.dataset.editable = 'true';
+        label.tabIndex = 0;
+        label.setAttribute('role', 'button');
+        label.setAttribute(
+          'aria-label',
+          `Rename ${task.text}`
+        );
+        label.title = 'Click to rename';
 
-      box.addEventListener('change', () => {
-        changeTask('check', {
-          p_task_id: task.id,
-          p_done: box.checked
+        label.addEventListener(
+          'click',
+          () => startInlineEdit(label, task)
+        );
+
+        label.addEventListener('keydown', event => {
+          if (
+            event.key === 'Enter' ||
+            event.key === ' '
+          ) {
+            event.preventDefault();
+            startInlineEdit(label, task);
+          }
         });
-      });
+      }
 
-      if (personKey === normalized(name)) {
+      row.appendChild(label);
+
+      // Delete button
+      if (mine) {
         const remove = el('button', '✕');
         remove.type = 'button';
-
         remove.setAttribute(
           'aria-label',
           `Delete ${task.text}`
         );
 
-        remove.addEventListener('click', () => {
-          changeTask('delete', {
-            p_task_id: task.id
-          });
+        remove.addEventListener('click', async () => {
+          try {
+            await taskWrite('delete', {
+              p_task_id: task.id
+            });
+            await refresh();
+          } catch (error) {
+            status(error.message);
+          }
         });
 
         row.appendChild(remove);
@@ -480,17 +782,19 @@ function display(snapshot) {
   updateClocks();
 }
 
-// Get updated tasks and daily totals
+// Refresh the board from Supabase
 async function refresh() {
-  if (!boardKey || reading) return;
+  if (!boardKey || reading || interaction) return;
 
   reading = true;
 
   try {
     const snapshot = await rpc(
-      'pomo_study_snapshot',
+      'pomo_study_snapshot_v2',
       {p_board_key: boardKey}
     );
+
+    if (interaction) return;
 
     display(snapshot);
 
@@ -499,48 +803,16 @@ async function refresh() {
       'Today (Eastern Time)'
     );
   } catch (error) {
-    status(`Cannot load study board: ${error.message}`);
+    status(
+      `Cannot load Study Board: ${error.message}`
+    );
   } finally {
     reading = false;
   }
 }
 
-// Add, check, or delete a task
-async function changeTask(action, details = {}) {
-  if (doingTask) return false;
-
-  if (!boardKey) {
-    status('Open the Activity in Discord to use this board.');
-    return false;
-  }
-
-  if (!name) {
-    status('Enter your study name in Settings first.');
-    return false;
-  }
-
-  doingTask = true;
-
-  try {
-    await rpc('pomo_study_write', {
-      p_board_key: boardKey,
-      p_display_name: name,
-      p_action: action,
-      ...details
-    });
-
-    await refresh();
-    return true;
-  } catch (error) {
-    status(error.message);
-    return false;
-  } finally {
-    doingTask = false;
-  }
-}
-
-// Add-task form
-$('study-form').addEventListener('submit', event => {
+// Add tasks
+$('study-form').addEventListener('submit', async event => {
   event.preventDefault();
 
   const field = $('study-task');
@@ -548,20 +820,23 @@ $('study-form').addEventListener('submit', event => {
 
   if (!task) return;
 
-  changeTask('add', {p_task: task})
-    .then(success => {
-      if (success) field.value = '';
-    });
+  try {
+    await taskWrite('add', {p_task: task});
+    field.value = '';
+    await refresh();
+  } catch (error) {
+    status(error.message);
+  }
 });
 
-// Open and close Study Board
+// Open and close board
 $('study-open').addEventListener('click', () => {
   dialog.showModal();
 
   if (!boardKey) {
     status(
-      'Join this Pomodoro Activity in Discord ' +
-      'to use the shared board.'
+      'Join the Pomodoro Activity in Discord ' +
+      'to use this board.'
     );
   } else if (!name) {
     status(
@@ -582,18 +857,21 @@ dialog.addEventListener('click', event => {
   if (event.target === dialog) dialog.close();
 });
 
-// Count time while visible or backgrounded
+// Activity-time heartbeat: every 20 seconds.
+// Runs even when document is hidden, when permitted.
 setInterval(heartbeat, 20000);
 
-// Update shared board while its popup is open
+// Study Board synchronization: every 15 seconds.
+// Pauses refreshing while editing or dragging.
 setInterval(() => {
-  if (dialog.open) refresh();
-}, 5000);
+  if (dialog.open && boardKey && !interaction) {
+    refresh();
+  }
+}, 15000);
 
-// Update the displayed seconds
+// Displayed clock: every second (no API requests).
 setInterval(updateClocks, 1000);
 
-// Catch up when Discord resumes a backgrounded Activity
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     heartbeat();
@@ -602,13 +880,11 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// Try to stop tracking when Activity closes
 window.addEventListener('pagehide', () => {
   presence(name, sessionId, boardKey, true, true)
     .catch(() => {});
 });
 
-// Restart tracking if a cached page is restored
 window.addEventListener('pageshow', event => {
   if (event.persisted) {
     sessionId = null;
