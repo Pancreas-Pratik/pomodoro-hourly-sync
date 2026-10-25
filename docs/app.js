@@ -228,6 +228,19 @@ if (inDiscord && DISCORD_CLIENT_ID) {
   import('./discord-sdk.js').then(async ({DiscordSDK}) => {
     const sdk = new DiscordSDK(DISCORD_CLIENT_ID);
     await sdk.ready();
+
+    
+    // Shared Study Board — no Discord authorization required
+    window.pomoStudyBoardKey = sdk.channelId
+      ? `channel:${sdk.channelId}`
+      : `instance:${sdk.instanceId}`;
+
+    window.dispatchEvent(new CustomEvent('pomo-study-ready', {
+      detail: {
+        boardKey: window.pomoStudyBoardKey
+      }
+    }));
+
     
     if (!SUPABASE_PUBLISHABLE_KEY || !sdk.instanceId) {
       connecting = false;
