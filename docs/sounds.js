@@ -117,17 +117,28 @@
   // Restore 15-second audio and Test playback
   let clipBuffer;
   let clipLoading;
-  let clipSource;
-  let clipGeneration = 0;
+  // Automatic alerts and Test playback have separate audio sources.
+  const clipSources = {automatic: null, test: null};
+  const clipGenerations = {automatic: 0, test: 0};
+  const automaticNotes = new Set();
 
-  function stopClip() {
-    clipGeneration++;
-
-    if (clipSource) {
-      try { clipSource.stop(); } catch {}
-      clipSource.disconnect();
-      clipSource = null;
+  function stopClip(kind = 'automatic') {
+    clipGenerations[kind]++;
+    const source = clipSources[kind];
+    if (source) {
+      try { source.stop(); } catch {}
+      try { source.disconnect(); } catch {}
+      clipSources[kind] = null;
     }
+  }
+
+  function stopAutomatic() {
+    stopClip('automatic');
+    for (const oscillator of automaticNotes) {
+      try { oscillator.stop(); } catch {}
+      try { oscillator.disconnect(); } catch {}
+    }
+    automaticNotes.clear();
   }
 
   function loadClip(ctx) {
@@ -152,38 +163,30 @@
     return clipLoading;
   }
 
-  async function playClip(seconds = 15) {
-    stopClip();
-
-    const generation = clipGeneration;
+  async function playClip(seconds = 15, kind = 'automatic') {
+    stopClip(kind);
+    const generation = clipGenerations[kind];
     const ctx = audio;
-
     if (!ctx || ctx.state !== 'running' || !masterGain) return;
 
     const requestedAt = performance.now();
-
     try {
       const buffer = await loadClip(ctx);
-      if (generation !== clipGeneration) return;
+      if (generation !== clipGenerations[kind] || audio !== ctx) return;
 
-      const remaining =
-        seconds - (performance.now() - requestedAt) / 1000;
-
+      // Align late playback with the *current* countdown.
+      const remaining = seconds - (performance.now() - requestedAt) / 1000;
       const offset = Math.max(0, 15 - remaining);
-
       if (remaining <= 0 || offset >= buffer.duration) return;
 
-      clipSource = ctx.createBufferSource();
-      clipSource.buffer = buffer;
-
-      // Route through the volume slider
-      clipSource.connect(masterGain);
-
-      clipSource.start(
-        0,
-        offset,
-        Math.min(remaining, buffer.duration - offset)
-      );
+      const source = ctx.createBufferSource();
+      clipSources[kind] = source;
+      source.buffer = buffer;
+      source.connect(masterGain);
+      source.addEventListener('ended', () => {
+        if (clipSources[kind] === source) clipSources[kind] = null;
+      }, {once: true});
+      source.start(0, offset, Math.min(remaining, buffer.duration - offset));
     } catch (error) {
       console.error('15-second sound could not play:', error);
     }
@@ -191,15 +194,15 @@
 
   // Stop old sounds when timer settings change
   for (const select of [beforeBreak, beforeFocus]) {
-    select.addEventListener('change', stopClip);
+    select.addEventListener('change', stopAutomatic);
   }
 
   for (const id of ['toggle', 'reset', 'sync']) {
-    document.getElementById(id)?.addEventListener('click', stopClip);
+    document.getElementById(id)?.addEventListener('click', stopAutomatic);
   }
 
   document.getElementById('durations')
-    ?.addEventListener('submit', stopClip);
+    ?.addEventListener('submit', stopAutomatic);
 
 
   
@@ -236,7 +239,13 @@
           console.error('Audio resume failed:', error);
         });
       }
-  
+
+      // Prepare the MP3 while the user is interacting, not at 15s.
+      // This loads/decodes data only; it does NOT schedule or play it.
+      if (!clipBuffer && !clipLoading) {
+        loadClip(audio).catch(() => {});
+      }
+
       return audio;
     } catch (error) {
       console.error('Audio initialization failed:', error);
@@ -249,7 +258,7 @@
   document.addEventListener('pointerdown', unlockAudio, {capture:true});
   document.addEventListener('keydown', unlockAudio, {capture:true});
 
-  function playNote(name, step, when) {
+  function playNote(name, step, when, kind = 'automatic') {
     const p = presets[name];
     if (!p) return;
     const ctx = audio;
@@ -271,6 +280,12 @@
       gain.gain.exponentialRampToValueAtTime(0.0001, when + p.duration);
       oscillator.connect(gain);
       gain.connect(masterGain);
+      if (kind === 'automatic') {
+        automaticNotes.add(oscillator);
+        oscillator.addEventListener('ended', () => {
+          automaticNotes.delete(oscillator);
+        }, {once: true});
+      }
       oscillator.start(when);
       oscillator.stop(when + p.duration + 0.02);
     }
@@ -287,61 +302,67 @@
         try { await ctx.resume(); } catch { return; }
       }
       if (ctx.state !== 'running') return;
-      if (selected.value === 'countdown15') { playClip(); return; }
-      stopClip();
+      if (selected.value === 'countdown15') {
+        playClip(15, 'test');
+        return;
+      }
       const start = ctx.currentTime + 0.08;
       for (let step = 0; step < 3; step++) {
-        playNote(selected.value, step, start + step * 0.65);
+        playNote(selected.value, step, start + step * 0.65, 'test');
       }
     });
   });
 
-  let lastPhase = '';
-  let lastRemaining = null;
+  // Live state notifications from app.js. NO advance scheduling.
+  let lastCycle = null;
+  let lastEligible = false;
   const played = new Set();
 
-  function checkTimer() {
-    if (document.hidden) return;
-    const match = countdown.textContent.trim().match(/^(\d+):(\d{2})$/);
-    if (!match) return;
+  window.addEventListener('pomo-live-timer', event => {
+    const timer = event.detail;
+    if (!timer) return;
 
-    const seconds = Number(match[1]) * 60 + Number(match[2]);
-    const phase = phaseLabel.textContent.trim().toLowerCase();
-    const running = toggle.textContent.trim() === 'Pause';
+    const eligible = Boolean(timer.running && timer.safeToNotify);
+    const cycle = [
+      timer.version, timer.mode, timer.phase,
+      timer.endsAt, timer.focus, timer.rest
+    ].join('|');
 
-    // New cycle or reset: permit the next countdown.
-    if (phase !== lastPhase ||
-        (lastRemaining !== null && seconds > lastRemaining + 1)) {
+    // A different cycle, pause, reset, remote change,
+    // or disconnection immediately cancels AUTOMATIC audio only.
+    if (cycle !== lastCycle || eligible !== lastEligible) {
+      stopAutomatic();
       played.clear();
-      stopClip();
     }
-    lastPhase = phase;
-    lastRemaining = seconds;
+    lastCycle = cycle;
+    lastEligible = eligible;
+    if (!eligible) return;
 
-    if (!running || !['focus', 'break'].includes(phase)) {
-      played.clear(); stopClip(); return;
-    }
-    const selectedSound = phase === 'focus' ? beforeBreak.value : beforeFocus.value;
-    if (selectedSound === 'countdown15') {
-      if (seconds > 15) { played.clear(); return; }
-      if (seconds >= 1 && !played.has('clip') && audio?.state === 'running') {
+    const ms = Number(timer.remaining);
+    if (!Number.isFinite(ms) || ms <= 0) return;
+
+    const sound = timer.phase === 'focus'
+      ? beforeBreak.value
+      : beforeFocus.value;
+    if (!sound || sound === 'off') return;
+
+    // The recording begins ONLY once we're actually within 15s.
+    if (sound === 'countdown15') {
+      if (ms <= 15000 && !played.has('clip') &&
+          audio?.state === 'running') {
         played.add('clip');
-        playClip(seconds);
+        playClip(ms / 1000, 'automatic');
       }
       return;
     }
-    if (seconds > 3) played.clear();
+
+    // Live beeps/chimes at 3, 2 and 1 seconds remaining.
+    const seconds = Math.ceil(ms / 1000);
     if (seconds < 1 || seconds > 3 || played.has(seconds)) return;
+    if (audio?.state !== 'running') return;
 
-    // Exactly one alert for each of 3, 2, and 1.
     played.add(seconds);
-    const sound = phase === 'focus' ? beforeBreak.value : beforeFocus.value;
-    if (sound === 'off') return;
-    const ctx = audio;
-    if (!ctx || ctx.state !== 'running') return;
-    playNote(sound, 3 - seconds, ctx.currentTime + 0.01);
-  }
-
-  setInterval(checkTimer, 150);
-  checkTimer();
+    playNote(sound, 3 - seconds, audio.currentTime + 0.01,
+      'automatic');
+  });
 })();
