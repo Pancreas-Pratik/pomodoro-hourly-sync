@@ -38,11 +38,21 @@ let pending = false;
 
 const now = () => Date.now() + serverOffset;
 
-function render() {
-  if (document.hidden) return;
 
+function render() {
   const time = now();
   const view = current(state, time);
+
+  // Send the live timer state to the sound system,
+  // even when Discord is in the background.
+  window.dispatchEvent(new CustomEvent('pomo-live-timer', {
+    detail: {
+      ...view,
+      safeToNotify: !connecting &&
+        (!sharedReady || sharedConnection === 'online')
+    }
+  }));
+
   const seconds = Math.max(
     0, Math.ceil(view.remaining / 1000)
   );
@@ -112,16 +122,15 @@ function render() {
   }
 }
 
+
 function tick() {
   clearTimeout(renderTimeout);
   render();
 
-  if (!document.hidden) {
-    renderTimeout = setTimeout(
-      tick, 1000 - (Date.now() % 1000) + 5
-    );
-  }
+  // Keep checking the live timer, even in the background.
+  renderTimeout = setTimeout(tick, 250);
 }
+
 
 function updateControls() {
   if (document.activeElement !== $('focus')) {
@@ -222,16 +231,18 @@ $('durations').onsubmit = event => {
   });
 };
 
+
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    clearTimeout(renderTimeout);
-  } else {
-    if (sharedReady) {
-      shared.refresh().catch(() => {});
-    }
-    tick();
+  // Continue the live countdown whether Discord is
+  // in the foreground or background.
+  tick();
+
+  // Refresh from Supabase when Discord becomes visible.
+  if (!document.hidden && sharedReady) {
+    shared.refresh().catch(() => {});
   }
 });
+
 
 window.addEventListener('pageshow', event => {
   if (event.persisted) shared?.resume();
