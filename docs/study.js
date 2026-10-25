@@ -1213,3 +1213,181 @@ makeDraggable = function(grip, row, section) {
     }
   });
 };
+
+
+/* Compact shared Pomodoro timer inside Study Board */
+
+const miniTimerStyle = document.createElement('style');
+
+miniTimerStyle.textContent = `
+#study-mini-timer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin: 10px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.study-mini-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+#study-mini-phase {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#study-mini-countdown {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.study-mini-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.study-mini-controls button {
+  min-height: 32px;
+  padding: 6px 11px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.study-mini-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 360px) {
+  #study-mini-timer {
+    padding: 9px;
+    gap: 7px;
+  }
+
+  #study-mini-countdown {
+    font-size: 21px;
+  }
+
+  .study-mini-controls button {
+    padding: 6px 8px;
+  }
+}
+`;
+
+document.head.appendChild(miniTimerStyle);
+
+// Build the mini timer
+const miniTimer = document.createElement('section');
+
+miniTimer.id = 'study-mini-timer';
+miniTimer.setAttribute(
+  'aria-label',
+  'Shared Pomodoro timer'
+);
+
+miniTimer.innerHTML = `
+  <div class="study-mini-readout">
+    <span id="study-mini-phase">Focus</span>
+    <strong id="study-mini-countdown">50:00</strong>
+  </div>
+
+  <div class="study-mini-controls">
+    <button
+      id="study-mini-toggle"
+      type="button"
+    >Pause</button>
+
+    <button
+      id="study-mini-reset"
+      type="button"
+    >Reset</button>
+  </div>
+`;
+
+// Place directly below the Study Board title
+dialog.querySelector('.study-top')
+  ?.insertAdjacentElement('afterend', miniTimer);
+
+// Reference the existing main Pomodoro controls
+const mainToggle = document.getElementById('toggle');
+const mainReset = document.getElementById('reset');
+const mainPhase = document.getElementById('phase');
+const mainCountdown = document.getElementById('countdown');
+
+const miniToggle = document.getElementById(
+  'study-mini-toggle'
+);
+
+const miniReset = document.getElementById(
+  'study-mini-reset'
+);
+
+// Forward button clicks to the real shared timer.
+// This preserves Supabase synchronization.
+miniToggle.addEventListener('click', () => {
+  if (mainToggle && !mainToggle.disabled) {
+    mainToggle.click();
+  }
+});
+
+miniReset.addEventListener('click', () => {
+  if (mainReset && !mainReset.disabled) {
+    mainReset.click();
+  }
+});
+
+// Mirror the main countdown and current timer phase
+function updateMiniTimer() {
+  if (!dialog.open) return;
+
+  const phase = mainPhase?.textContent?.trim() || 'Focus';
+
+  const countdown =
+    mainCountdown?.textContent?.trim() || '50:00';
+
+  const toggleText =
+    mainToggle?.textContent?.trim() || 'Pause';
+
+  const miniPhase = document.getElementById(
+    'study-mini-phase'
+  );
+
+  const miniCountdown = document.getElementById(
+    'study-mini-countdown'
+  );
+
+  miniPhase.textContent = phase;
+  miniCountdown.textContent = countdown;
+
+  miniToggle.textContent = toggleText;
+
+  miniToggle.disabled =
+    !mainToggle || mainToggle.disabled;
+
+  miniReset.disabled =
+    !mainReset || mainReset.disabled;
+}
+
+// Update display without making Supabase requests
+setInterval(updateMiniTimer, 500);
+
+// Initialize the display
+updateMiniTimer();
+
+
+
+
