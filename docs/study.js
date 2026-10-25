@@ -891,3 +891,325 @@ window.addEventListener('pageshow', event => {
     heartbeat();
   }
 });
+
+
+
+/* Compact Study Board + reliable drag handling */
+
+const compactStudyStyle = document.createElement('style');
+
+compactStudyStyle.textContent = `
+#study-dialog {
+  width:min(560px,calc(100vw - 20px));
+  max-height:82dvh;
+  padding:14px;
+  overflow-y:auto;
+}
+
+#study-form { margin:9px 0 }
+#study-task,#study-add { min-height:32px }
+
+.study-person {
+  padding:6px 0 1px;
+}
+
+.study-person-head {
+  display:grid;
+  grid-template-columns:12px minmax(0,1fr) auto;
+  gap:7px;
+  align-items:center;
+  min-height:30px;
+  margin-bottom:3px;
+  cursor:pointer;
+  user-select:none;
+}
+
+.study-person-head::before {
+  content:'▾';
+  font-size:13px;
+  color:var(--muted);
+}
+
+.study-collapsed .study-person-head::before {
+  content:'▸';
+}
+
+.study-person-head strong {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:13px;
+}
+
+.study-time {
+  font-size:11px;
+  white-space:nowrap;
+}
+
+.study-row {
+  gap:6px;
+  min-height:30px;
+  margin:2px 0;
+  font-size:12px;
+}
+
+.study-row button {
+  min-height:24px;
+  padding:2px 6px;
+}
+
+.study-grip {
+  padding:4px 3px;
+  flex:0 0 auto;
+}
+
+.study-collapsed > .study-row {
+  display:none;
+}
+`;
+
+document.head.appendChild(compactStudyStyle);
+
+// Remember which participant sections are open.
+const studyExpanded = new Map();
+const previousStudyDisplay = display;
+
+display = function(snapshot) {
+  previousStudyDisplay(snapshot);
+
+  const names = new Map();
+
+  for (const person of snapshot.people || []) {
+    names.set(person.key, person.name);
+  }
+
+  for (const task of snapshot.tasks || []) {
+    if (!names.has(task.key)) {
+      names.set(task.key, task.name);
+    }
+  }
+
+  const sorted = [...names].sort(
+    (a,b) => a[1].localeCompare(b[1])
+  );
+
+  const sections = [
+    ...$('study-people').querySelectorAll(
+      ':scope > .study-person'
+    )
+  ];
+
+  sorted.forEach(([key], index) => {
+    const section = sections[index];
+    const head = section?.querySelector(
+      '.study-person-head'
+    );
+
+    if (!head) return;
+
+    const isOpen = () =>
+      studyExpanded.has(key)
+        ? studyExpanded.get(key)
+        : key === normalize(name);
+
+    const renderFold = () => {
+      section.classList.toggle(
+        'study-collapsed', !isOpen()
+      );
+
+      head.setAttribute(
+        'aria-expanded', String(isOpen())
+      );
+    };
+
+    head.tabIndex = 0;
+    head.setAttribute('role','button');
+    head.setAttribute(
+      'aria-label','Expand or collapse tasks'
+    );
+
+    const toggle = () => {
+      studyExpanded.set(key,!isOpen());
+      renderFold();
+    };
+
+    head.addEventListener('click', toggle);
+
+    head.addEventListener('keydown', event => {
+      if (
+        event.key !== 'Enter' &&
+        event.key !== ' '
+      ) return;
+
+      event.preventDefault();
+      toggle();
+    });
+
+    renderFold();
+  });
+};
+
+// Fix drag-and-drop by listening on the document,
+// not on the grip that moves with the row.
+makeDraggable = function(grip, row, section) {
+  let pointerId = null;
+  let before = [];
+
+  const order = () =>
+    [...section.querySelectorAll(
+      ':scope > .study-row'
+    )].map(item => Number(item.dataset.taskId));
+
+  function onMove(event) {
+    if (pointerId !== event.pointerId) return;
+
+    event.preventDefault();
+
+    const target = document.elementFromPoint(
+      event.clientX, event.clientY
+    )?.closest('.study-row');
+
+    if (
+      !target ||
+      target === row ||
+      target.parentElement !== section
+    ) return;
+
+    const bounds = target.getBoundingClientRect();
+    const middle = bounds.top + bounds.height / 2;
+
+    section.insertBefore(
+      row,
+      event.clientY > middle
+        ? target.nextSibling
+        : target
+    );
+  }
+
+  function detach() {
+    document.removeEventListener(
+      'pointermove', onMove, true
+    );
+    document.removeEventListener(
+      'pointerup', onUp, true
+    );
+    document.removeEventListener(
+      'pointercancel', onCancel, true
+    );
+
+    pointerId = null;
+    row.style.pointerEvents = '';
+    row.classList.remove('is-dragging');
+  }
+
+  async function finish(shouldSave) {
+    const after = order();
+    detach();
+
+    let error = null;
+
+    try {
+      if (
+        shouldSave &&
+        after.join(',') !== before.join(',')
+      ) {
+        await moveTasks(after);
+      }
+    } catch (e) {
+      error = e;
+    } finally {
+      interaction = null;
+      await refresh();
+
+      if (error) {
+        status(`Could not reorder: ${error.message}`);
+      }
+    }
+  }
+
+  function onUp(event) {
+    if (event.pointerId === pointerId) {
+      void finish(true);
+    }
+  }
+
+  function onCancel(event) {
+    if (event.pointerId === pointerId) {
+      void finish(false);
+    }
+  }
+
+  grip.addEventListener('pointerdown', event => {
+    if (
+      interaction ||
+      writing ||
+      (event.pointerType === 'mouse' &&
+       event.button !== 0)
+    ) return;
+
+    event.preventDefault();
+
+    interaction = 'drag';
+    pointerId = event.pointerId;
+    before = order();
+
+    row.classList.add('is-dragging');
+    row.style.pointerEvents = 'none';
+
+    document.addEventListener(
+      'pointermove', onMove,
+      {capture:true,passive:false}
+    );
+
+    document.addEventListener(
+      'pointerup', onUp, true
+    );
+
+    document.addEventListener(
+      'pointercancel', onCancel, true
+    );
+  });
+
+  // Keyboard alternative: arrow keys on the grip.
+  grip.addEventListener('keydown', async event => {
+    if (
+      !['ArrowUp','ArrowDown'].includes(event.key) ||
+      interaction ||
+      writing
+    ) return;
+
+    event.preventDefault();
+
+    const ids = order();
+    const old = ids.indexOf(
+      Number(row.dataset.taskId)
+    );
+
+    const next = old + (
+      event.key === 'ArrowUp' ? -1 : 1
+    );
+
+    if (next < 0 || next >= ids.length) return;
+
+    [ids[old],ids[next]] =
+      [ids[next],ids[old]];
+
+    interaction = 'drag';
+
+    let error = null;
+
+    try {
+      await moveTasks(ids);
+    } catch (e) {
+      error = e;
+    } finally {
+      interaction = null;
+      await refresh();
+
+      if (error) {
+        status(`Could not reorder: ${error.message}`);
+      }
+    }
+  });
+};
