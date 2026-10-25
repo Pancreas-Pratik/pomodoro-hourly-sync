@@ -1341,14 +1341,17 @@ const miniReset = document.getElementById(
 miniToggle.addEventListener('click', () => {
   if (mainToggle && !mainToggle.disabled) {
     mainToggle.click();
+    updateMiniTimer();
   }
 });
 
 miniReset.addEventListener('click', () => {
   if (mainReset && !mainReset.disabled) {
     mainReset.click();
+    updateMiniTimer();
   }
 });
+
 
 // Mirror the main countdown and current timer phase
 function updateMiniTimer() {
