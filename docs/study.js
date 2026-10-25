@@ -1,1396 +1,804 @@
-
-import {
-  SUPABASE_URL,
-  SUPABASE_PUBLISHABLE_KEY
-} from './config.js';
+/* Minimal Pomo shared Study Board & Calendar (Eastern Time).
+   Only this module and the SQL migration are new: timer/sounds remain unchanged.
+   A user-entered study name is the matching key; no identity authentication. */
+import {SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY} from './config.js';
 
 const $ = id => document.getElementById(id);
-
-const url = location.hostname.endsWith('.discordsays.com')
-  ? `${location.origin}/.proxy/supabase`
-  : SUPABASE_URL;
-
-const getSavedName = () => {
-  try {
-    return localStorage.getItem('pomo-study-name') || '';
-  } catch {
-    return '';
-  }
-};
-
-let boardKey = null;
-let name = getSavedName().trim();
-let sessionId = null;
-let reading = false;
-let writing = false;
-let interaction = null;
-
-// Interface styling
-const style = document.createElement('style');
-
-style.textContent = `
-#study-open {
-  display:block;
-  margin:9px auto 0;
-  min-height:32px;
-  padding:6px 15px;
-  font-size:12px;
-}
-#study-name-box {
-  margin:16px 0;
-  padding:12px 0;
-  border-top:1px solid var(--line);
-}
-#study-name-box label {
-  display:block;
-  margin-bottom:8px;
-}
-#study-name {
-  padding:10px;
-  border:1px solid var(--line);
-  border-radius:7px;
-  width:100%;
-}
-#study-dialog {
-  width:min(470px,calc(100vw - 20px));
-  max-height:85dvh;
-  overflow:auto;
-  border:1px solid var(--line);
-  border-radius:12px;
-  padding:18px;
-  background:var(--surface);
-  color:inherit;
-}
-#study-dialog::backdrop {
-  background:rgba(0,0,0,.65);
-}
-.study-top,.study-person-head {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-}
-.study-top h2 {
-  margin:0;
-  font-size:18px;
-}
-#study-close {
-  min-height:32px;
-  padding:5px 10px;
-}
-#study-status {
-  color:var(--muted);
-  font-size:12px;
-  margin:12px 0;
-  line-height:1.5;
-}
-#study-form {
-  display:flex;
-  gap:8px;
-  align-items:center;
-  margin:14px 0;
-}
-#study-task {
-  flex:1;
-  min-width:0;
-  min-height:36px;
-  border:1px solid var(--line);
-  border-radius:7px;
-  padding:8px;
-}
-#study-add {
-  min-height:36px;
-  padding:7px 12px;
-}
-.study-person {
-  border-top:1px solid var(--line);
-  padding:13px 0 4px;
-}
-.study-person-head {
-  flex-wrap:wrap;
-  margin-bottom:9px;
-}
-.study-person-head strong {
-  font-size:14px;
-}
-.study-time {
-  font-size:12px;
-  font-variant-numeric:tabular-nums;
-  color:var(--muted);
-}
-.study-row {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin:8px 0;
-  font-size:13px;
-}
-.study-row input[type=checkbox] {
-  width:17px;
-  height:17px;
-  flex:0 0 17px;
-  accent-color:var(--accent);
-}
-.study-task-text {
-  flex:1;
-  min-width:0;
-  overflow-wrap:anywhere;
-}
-.study-task-text[data-editable=true] {
-  cursor:text;
-}
-.study-task-text[data-editable=true]:focus-visible {
-  outline:2px solid var(--accent);
-  outline-offset:3px;
-}
-.study-inline-edit {
-  flex:1;
-  min-width:0;
-  padding:5px 7px;
-  border:1px solid var(--line);
-  border-radius:6px;
-  font:inherit;
-}
-.study-grip {
-  flex:0 0 auto;
-  padding:5px 4px;
-  opacity:.55;
-  cursor:grab;
-  touch-action:none;
-  user-select:none;
-  font-size:16px;
-  letter-spacing:-4px;
-}
-.study-grip:active {
-  cursor:grabbing;
-}
-.study-row.is-dragging {
-  opacity:.55;
-}
-.study-row button {
-  min-height:26px;
-  padding:3px 8px;
-  font-size:12px;
-}
-.study-empty {
-  font-size:12px;
-  color:var(--muted);
-}
-`;
-
-document.head.appendChild(style);
-
-// Name field inside Settings
-const nameBox = document.createElement('section');
-nameBox.id = 'study-name-box';
-
-nameBox.innerHTML = `
-  <label for="study-name">Your study name</label>
-  <input id="study-name" maxlength="40"
-    placeholder="Enter your name"
-    autocomplete="nickname">
-  <p class="hint">
-    Use the same name on all devices to share tasks
-    and daily Activity time. No login.
-  </p>
-`;
-
-const settingsHolder =
-  document.querySelector('.settings-dialog-body') ||
-  document.querySelector('.settings');
-
-settingsHolder?.prepend(nameBox);
-
-if ($('study-name')) {
-  $('study-name').value = name;
-}
-
-// Main screen Study Board button
-const openButton = document.createElement('button');
-openButton.id = 'study-open';
-openButton.type = 'button';
-openButton.textContent = '☑ Study Board';
-
-document.querySelector('.timer .controls')
-  ?.insertAdjacentElement('afterend', openButton);
-
-// Study Board dialog
-const dialog = document.createElement('dialog');
-dialog.id = 'study-dialog';
-
-dialog.innerHTML = `
-  <div class="study-top">
-    <h2>Shared Study Board</h2>
-    <button id="study-close" type="button"
-      aria-label="Close">✕</button>
-  </div>
-  <p id="study-status" role="status"></p>
-  <form id="study-form">
-    <input id="study-task" maxlength="200"
-      placeholder="Add your to-do" required>
-    <button id="study-add" type="submit">Add</button>
-  </form>
-  <div id="study-people"></div>
-`;
-
-document.body.appendChild(dialog);
-
-const status = message => {
-  $('study-status').textContent = message;
-};
-
-const normalize = value =>
-  value.trim().replace(/\s+/g, ' ').toLowerCase();
-
-const el = (tag, value) => {
-  const element = document.createElement(tag);
-  if (value !== undefined) {
-    element.textContent = value;
-  }
-  return element;
-};
-
-// Supabase connection
-async function rpc(method, params, keepalive = false) {
-  const response = await fetch(
-    `${url}/rest/v1/rpc/${method}`,
-    {
-      method: 'POST',
-      keepalive,
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(params)
-    }
-  );
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(
-      data.message || `Supabase error ${response.status}`
-    );
-  }
-
-  return data;
-}
-
-// Activity-time tracking
-async function presence(
-  who, id, board, ending = false, keepalive = false
-) {
-  if (!who || !id || !board) return;
-
-  return rpc('pomo_study_presence', {
-    p_board_key: board,
-    p_display_name: who,
-    p_session_id: id,
-    p_end: ending
-  }, keepalive);
-}
-
-function heartbeat() {
-  if (!boardKey || !name) return;
-
-  if (!sessionId) {
-    sessionId = crypto.randomUUID();
-  }
-
-  presence(name, sessionId, boardKey)
-    .catch(error => {
-      console.warn('Study clock sync:', error);
-      if (dialog.open) {
-        status(`Clock: ${error.message}`);
-      }
-    });
-}
-
-function setBoard(nextKey) {
-  if (!/^(channel|instance):[A-Za-z0-9_-]{1,128}$/
-    .test(nextKey || '')) return;
-
-  if (boardKey === nextKey) return;
-
-  if (boardKey && sessionId && name) {
-    presence(name, sessionId, boardKey, true, true)
-      .catch(() => {});
-  }
-
-  boardKey = nextKey;
-  sessionId = null;
-
-  heartbeat();
-
-  if (dialog.open) refresh();
-}
-
-window.addEventListener(
-  'pomo-study-ready',
-  event => setBoard(event.detail?.boardKey)
-);
-
-if (window.pomoStudyBoardKey) {
-  setBoard(window.pomoStudyBoardKey);
-}
-
-$('study-name')?.addEventListener('change', () => {
-  const nextName = $('study-name').value
-    .trim().replace(/\s+/g, ' ');
-
-  if (
-    normalize(nextName) !== normalize(name) &&
-    sessionId && boardKey
-  ) {
-    presence(name, sessionId, boardKey, true, true)
-      .catch(() => {});
-    sessionId = null;
-  }
-
-  name = nextName;
-  $('study-name').value = name;
-
-  try {
-    localStorage.setItem('pomo-study-name', name);
-  } catch {}
-
-  heartbeat();
-
-  if (dialog.open) refresh();
+const apiUrl = location.hostname.endsWith('.discordsays.com')
+  ? `${location.origin}/.proxy/supabase` : SUPABASE_URL;
+const nyParts = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'
+});
+const dateFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric'
+});
+const monthFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC', year: 'numeric', month: 'long'
 });
 
-function hhmmss(seconds) {
-  const n = Math.max(0, Math.floor(seconds));
+function todayET() {
+  const p = Object.fromEntries(nyParts.formatToParts(Date.now())
+    .map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
+const dateUTC = key => new Date(`${key}T12:00:00Z`);
+const dateTitle = day => dateFmt.format(dateUTC(day));
+const firstOfMonth = day => `${day.slice(0, 7)}-01`;
+const normalize = s => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+const el = (tag, text) => {
+  const n = document.createElement(tag);
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+const pad = n => String(n).padStart(2, '0');
+const duration = seconds => {
+  const n = Math.max(0, Math.floor(Number(seconds) || 0));
+  return `${pad(Math.floor(n / 3600))}:${pad(Math.floor(n / 60) % 60)}:${pad(n % 60)}`;
+};
+const shortDuration = seconds => {
+  const n = Math.max(0, Math.round(Number(seconds) || 0));
+  if (n < 3600) return `${Math.floor(n / 60)}m`;
+  return `${Math.floor(n / 3600)}h${Math.floor(n % 3600 / 60) ? `${Math.floor(n % 3600 / 60)}m` : ''}`;
+};
+const savedName = (() => {
+  try { return localStorage.getItem('pomo-study-name') || ''; }
+  catch { return ''; }
+})();
 
-  return [
-    Math.floor(n / 3600),
-    Math.floor(n / 60) % 60,
-    n % 60
-  ].map(v => String(v).padStart(2, '0')).join(':');
+let boardKey = null;
+let name = savedName.trim();
+let sessionId = null;
+let interaction = null;
+let writing = false;
+let readingToday = false;
+let readingDay = false;
+let readingMonth = false;
+let activeDay = todayET();
+let calendarMonth = firstOfMonth(activeDay);
+let selectedDay = activeDay;
+let previewDay = null;
+let previewGeneration = 0;
+let monthData = [];
+const previewCache = new Map();
+const expanded = new Map();
+
+const css = document.createElement('style');
+css.textContent = `
+#study-open {display:block;margin:9px auto 0;min-height:32px;padding:6px 15px;font-size:12px}
+#study-name-box {margin:16px 0;padding:12px 0;border-top:1px solid var(--line)}
+#study-name-box label {display:block;margin-bottom:8px}
+#study-name {width:100%;padding:10px;border:1px solid var(--line);border-radius:7px}
+#study-dialog,#study-calendar,#study-day-dialog {
+  width:min(560px,calc(100vw - 20px));max-height:84dvh;overflow:auto;
+  padding:14px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);color:inherit;
+}
+#study-calendar {width:min(870px,calc(100vw - 16px));max-height:90dvh}
+#study-day-dialog {width:min(590px,calc(100vw - 20px))}
+#study-dialog::backdrop,#study-calendar::backdrop,#study-day-dialog::backdrop {background:rgba(0,0,0,.68)}
+.study-top,.study-calendar-nav {display:flex;align-items:center;justify-content:space-between;gap:8px}
+.study-top h2 {font-size:17px;margin:0;min-width:0}
+.study-actions {display:flex;align-items:center;gap:6px}
+.study-actions button,.study-calendar-nav button {min-height:28px;padding:4px 9px;font-size:12px}
+.study-status {color:var(--muted);font-size:11px;line-height:1.4;margin:7px 0}
+.study-form {display:flex;align-items:center;gap:7px;margin:8px 0}
+.study-form input {min-width:0;flex:1;min-height:33px;padding:7px;border:1px solid var(--line);border-radius:6px}
+.study-form button {min-height:33px;padding:6px 12px}
+.study-person {border-top:1px solid var(--line);padding:5px 0 1px}
+.study-person-head {display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:5px;align-items:center;min-height:30px;cursor:pointer;user-select:none}
+.study-person-head::before {content:'▾';color:var(--muted);font-size:12px}
+.study-person.is-collapsed .study-person-head::before {content:'▸'}
+.study-person-head strong {min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.study-time {font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted)}
+.study-task-rows {padding-left:6px}
+.study-person.is-collapsed .study-task-rows {display:none}
+.study-row {display:flex;align-items:center;gap:5px;min-height:28px;margin:1px 0;font-size:12px}
+.study-row input[type=checkbox] {width:15px;height:15px;flex:0 0 15px;accent-color:var(--accent)}
+.study-task-text {flex:1;min-width:0;overflow-wrap:anywhere}
+.study-task-text[data-editable=true] {cursor:text}
+.study-task-text[data-editable=true]:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+.study-inline-edit {flex:1;min-width:0;padding:4px;border:1px solid var(--line);border-radius:5px;font:inherit}
+.study-grip {padding:4px 3px;opacity:.6;cursor:grab;touch-action:none;user-select:none;font-size:16px;letter-spacing:-4px}
+.study-grip:active {cursor:grabbing}
+.study-row.is-dragging {opacity:.6}
+.study-row button {min-height:24px;padding:2px 6px;font-size:12px}
+.study-empty {color:var(--muted);font-size:12px;margin:7px 0}
+#study-mini-timer {display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;margin:9px 0;border:1px solid var(--line);border-radius:9px}
+.study-mini-readout {display:flex;flex-direction:column;gap:2px}
+#study-mini-phase {font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+#study-mini-countdown {font-variant-numeric:tabular-nums;font-size:23px;line-height:1.1}
+.study-mini-controls {display:flex;gap:6px}
+.study-mini-controls button {min-height:30px;padding:5px 9px;font-size:12px}
+.study-mini-controls button:disabled {opacity:.5}
+.study-calendar-nav {margin:12px 0 9px}
+.study-calendar-nav strong {font-size:15px}
+.study-calendar-grid {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.study-weekday {text-align:center;font-size:10px;color:var(--muted);padding:3px 0}
+.study-day-cell {min-width:0;min-height:96px;max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;padding:4px;cursor:pointer;background:transparent;color:inherit;text-align:left;display:flex;flex-direction:column;gap:3px;font:inherit}
+.study-day-cell:hover,.study-day-cell:focus-visible,.study-day-cell.is-previewed {outline:1px solid var(--accent);outline-offset:0}
+.study-day-cell.is-today .study-day-number {text-decoration:underline;font-weight:700}
+.study-day-cell:disabled {opacity:.45;cursor:default}
+.study-day-number {font-size:11px;font-weight:600;line-height:1.1}
+.study-day-person {font-size:9px;line-height:1.15;display:flex;justify-content:space-between;gap:2px;min-width:0}
+.study-day-person-name {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.study-day-person-stats {white-space:nowrap;flex:0 0 auto;font-variant-numeric:tabular-nums}
+.study-day-more {font-size:9px;color:var(--muted)}
+#study-preview {border-top:1px solid var(--line);margin-top:12px;padding-top:8px}
+#study-preview h3 {font-size:13px;margin:0 0 8px}
+.study-preview-empty {color:var(--muted);font-size:12px;margin:4px 0}
+#study-preview .study-row {pointer-events:none}
+@media(max-width:560px) {
+  .study-day-cell {min-height:78px;padding:3px}
+  .study-day-person {font-size:8px}
+  .study-day-person-stats {display:none}
+  .study-person-head {grid-template-columns:10px minmax(0,1fr) auto}
+  .study-time {font-size:9px}
+  .study-actions button {padding:4px 6px}
+}
+`;
+document.head.appendChild(css);
+
+// Name setting; matching name on devices deliberately shares an identity.
+const nameBox = el('section');
+nameBox.id = 'study-name-box';
+nameBox.innerHTML = `<label for="study-name">Your study name</label>
+  <input id="study-name" maxlength="40" placeholder="Enter your name" autocomplete="nickname">
+  <p class="hint">Use the same name across devices for shared tasks and Activity time. No login.</p>`;
+(document.querySelector('.settings-dialog-body') || document.querySelector('.settings'))?.prepend(nameBox);
+if ($('study-name')) $('study-name').value = name;
+
+const openButton = el('button', '☑ Study Board');
+openButton.id = 'study-open';
+openButton.type = 'button';
+document.querySelector('.timer .controls')?.insertAdjacentElement('afterend', openButton);
+
+// Main board and its original mini timer.
+const boardDialog = el('dialog');
+boardDialog.id = 'study-dialog';
+boardDialog.innerHTML = `
+  <div class="study-top"><h2>Shared Study Board</h2>
+    <div class="study-actions"><button type="button" id="study-calendar-open">▦ Calendar</button>
+      <button type="button" id="study-close" aria-label="Close board">✕</button></div>
+  </div>
+  <section id="study-mini-timer" aria-label="Shared Pomodoro timer">
+    <div class="study-mini-readout"><span id="study-mini-phase">Focus</span>
+      <strong id="study-mini-countdown">50:00</strong></div>
+    <div class="study-mini-controls"><button type="button" id="study-mini-toggle">Pause</button>
+      <button type="button" id="study-mini-reset">Reset</button></div>
+  </section>
+  <p class="study-status" id="study-status" role="status"></p>
+  <form class="study-form" id="study-form">
+    <input id="study-task" maxlength="200" placeholder="Add today's to-do" required>
+    <button type="submit">Add</button></form>
+  <div id="study-people"></div>`;
+document.body.appendChild(boardDialog);
+
+// Separate calendar window inside Discord (not an external browser tab).
+const calendarDialog = el('dialog');
+calendarDialog.id = 'study-calendar';
+calendarDialog.innerHTML = `
+  <div class="study-top"><h2>Study Calendar</h2>
+    <div class="study-actions"><button type="button" id="study-calendar-close" aria-label="Close calendar">✕</button></div></div>
+  <div class="study-calendar-nav">
+    <button type="button" id="study-prev-month" aria-label="Previous month">‹</button>
+    <strong id="study-month-label"></strong>
+    <div class="study-actions"><button type="button" id="study-this-month">Today</button>
+      <button type="button" id="study-next-month" aria-label="Next month">›</button></div>
+  </div>
+  <p class="study-status" id="study-month-status">Hover to preview a date; click to edit that day's tasks.</p>
+  <div class="study-calendar-grid" id="study-month-grid"></div>
+  <section id="study-preview"><h3>Hover over a date to preview its tasks</h3></section>`;
+document.body.appendChild(calendarDialog);
+
+const dayDialog = el('dialog');
+dayDialog.id = 'study-day-dialog';
+dayDialog.innerHTML = `
+  <div class="study-top"><h2 id="study-day-title"></h2>
+    <div class="study-actions"><button type="button" id="study-day-close" aria-label="Close day">✕</button></div></div>
+  <p id="study-day-status" class="study-status" role="status"></p>
+  <form class="study-form" id="study-day-form">
+    <input id="study-day-task" maxlength="200" placeholder="Add a task to this date" required>
+    <button type="submit">Add</button></form>
+  <div id="study-day-people"></div>`;
+document.body.appendChild(dayDialog);
+
+function status(message, where = 'study-status') { $(where).textContent = message; }
+
+async function rpc(method, params, keepalive = false) {
+  const response = await fetch(`${apiUrl}/rest/v1/rpc/${method}`, {
+    method: 'POST', keepalive,
+    headers: {apikey: SUPABASE_PUBLISHABLE_KEY, 'Content-Type': 'application/json'},
+    body: JSON.stringify(params)
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.message || `Supabase error ${response.status}`);
+  return result;
 }
 
-// Update visible clocks every second without server requests
-function updateClocks() {
-  dialog.querySelectorAll('.study-time')
-    .forEach(clock => {
-      const base = Number(clock.dataset.base) || 0;
-      const updated =
-        Number(clock.dataset.updated) || Date.now();
-
-      const extra = clock.dataset.active === 'true'
-        ? Math.max(0, (Date.now() - updated) / 1000)
-        : 0;
-
-      clock.textContent =
-        `Today · ${hhmmss(base + extra)}`;
-    });
+async function presence(who, id, board, ending = false, keepalive = false) {
+  if (!who || !id || !board) return;
+  return rpc('pomo_study_presence', {
+    p_board_key: board, p_display_name: who, p_session_id: id, p_end: ending
+  }, keepalive);
 }
-
-// Existing to-do actions
-async function taskWrite(action, extra = {}) {
-  if (writing) {
-    throw new Error('Another task change is saving');
+function heartbeat() {
+  if (!boardKey || !name) return;
+  if (!sessionId) sessionId = crypto.randomUUID();
+  presence(name, sessionId, boardKey).catch(error => {
+    console.warn('Study Activity clock:', error);
+    if (boardDialog.open) status(`Clock: ${error.message}`);
+  });
+}
+function setBoard(next) {
+  if (!/^(channel|instance):[A-Za-z0-9_-]{1,128}$/.test(next || '') || boardKey === next) return;
+  if (boardKey && sessionId && name) presence(name, sessionId, boardKey, true, true).catch(() => {});
+  boardKey = next;
+  sessionId = null;
+  previewCache.clear();
+  heartbeat();
+  if (boardDialog.open) refreshToday();
+  if (calendarDialog.open) loadMonth();
+}
+window.addEventListener('pomo-study-ready', event => setBoard(event.detail?.boardKey));
+if (window.pomoStudyBoardKey) setBoard(window.pomoStudyBoardKey);
+$('study-name')?.addEventListener('change', () => {
+  const next = $('study-name').value.trim().replace(/\s+/g, ' ');
+  if (normalize(next) !== normalize(name) && sessionId && boardKey) {
+    presence(name, sessionId, boardKey, true, true).catch(() => {});
+    sessionId = null;
   }
+  name = next;
+  $('study-name').value = name;
+  try { localStorage.setItem('pomo-study-name', name); } catch {}
+  expanded.clear();
+  heartbeat();
+  if (boardDialog.open) refreshToday();
+  if (dayDialog.open) refreshSelectedDay();
+  if (calendarDialog.open && previewDay) showPreview(previewDay, true);
+});
 
-  if (!boardKey) {
-    throw new Error('Join this Activity in Discord first');
-  }
-
-  if (!name) {
-    throw new Error('Enter your study name in Settings');
-  }
-
+async function saveTask(day, action, fields = {}) {
+  if (writing) throw new Error('Another task is being saved');
+  if (!boardKey) throw new Error('Open the Activity inside Discord first');
+  if (!name) throw new Error('Enter your study name in Settings first');
   writing = true;
-
   try {
-    return await rpc('pomo_study_write', {
-      p_board_key: boardKey,
-      p_display_name: name,
-      p_action: action,
-      ...extra
+    return await rpc('pomo_study_calendar_write', {
+      p_board_key: boardKey, p_display_name: name, p_day: day,
+      p_action: action, ...fields
     });
-  } finally {
-    writing = false;
-  }
+  } finally { writing = false; }
 }
 
-// NEW: Save inline task renames
-async function renameTask(task, updated) {
-  await rpc('pomo_study_rename', {
-    p_board_key: boardKey,
-    p_display_name: name,
-    p_task_id: task.id,
-    p_task: updated
-  });
-}
-
-// NEW: Save task ordering
-async function moveTasks(ids) {
-  await rpc('pomo_study_move', {
-    p_board_key: boardKey,
-    p_display_name: name,
-    p_task_ids: ids
+function updateStudyClocks() {
+  document.querySelectorAll('.study-time').forEach(clock => {
+    const baseDay = Number(clock.dataset.day) || 0;
+    const baseTotal = Number(clock.dataset.total) || 0;
+    const since = Number(clock.dataset.updated) || Date.now();
+    const isCurrentDay = clock.dataset.date === todayET();
+    const extra = isCurrentDay && clock.dataset.active === 'true'
+      ? Math.max(0, (Date.now() - since) / 1000) : 0;
+    clock.textContent = `${duration(baseDay + extra)} / ${duration(baseTotal + extra)}`;
+    clock.title = `That day: ${duration(baseDay + extra)} · All-time: ${duration(baseTotal + extra)}`;
   });
 }
 
-// NEW: Click task text to edit inline
-function startInlineEdit(label, task) {
-  if (interaction || writing) return;
-
-  interaction = 'edit';
-
-  const input = el('input');
-  input.type = 'text';
-  input.maxLength = 200;
-  input.value = task.text;
-  input.className = 'study-inline-edit';
-
-  label.replaceWith(input);
-  input.focus();
-  input.select();
-
-  let finished = false;
-
-  async function finish(save) {
-    if (finished) return;
-    finished = true;
-
-    const value = input.value.trim();
-    input.replaceWith(label);
-
-    try {
-      if (
-        save && value &&
-        value !== task.text
-      ) {
-        await renameTask(task, value);
-      }
-    } catch (error) {
-      status(`Rename failed: ${error.message}`);
-    } finally {
-      interaction = null;
-      await refresh();
-    }
+// Shared UI for today, archived days and hover previews.
+function renderPeople(container, snapshot, {editable = false, scope = 'today'} = {}) {
+  container.replaceChildren();
+  const members = new Map();
+  for (const p of snapshot.people || []) {
+    members.set(p.key, {...p, tasks: []});
   }
-
-  input.addEventListener('keydown', event => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      finish(true);
+  for (const t of snapshot.tasks || []) {
+    if (!members.has(t.key)) {
+      members.set(t.key, {key: t.key, name: t.name, seconds: 0,
+        total_seconds: 0, active: false, tasks: []});
     }
-
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      finish(false);
-    }
-  });
-
-  input.addEventListener('blur', () => finish(true));
-}
-
-// NEW: Drag tasks to reorder
-function makeDraggable(grip, row, section) {
-  let dragging = false;
-  let originalOrder = [];
-
-  const order = () =>
-    [...section.querySelectorAll('.study-row')]
-      .map(item => Number(item.dataset.taskId));
-
-  grip.addEventListener('pointerdown', event => {
-    if (
-      interaction ||
-      writing ||
-      (event.pointerType === 'mouse' && event.button !== 0)
-    ) return;
-
-    event.preventDefault();
-
-    interaction = 'drag';
-    dragging = true;
-    originalOrder = order();
-
-    row.classList.add('is-dragging');
-    grip.setPointerCapture(event.pointerId);
-  });
-
-  grip.addEventListener('pointermove', event => {
-    if (!dragging) return;
-
-    const target = document.elementFromPoint(
-      event.clientX, event.clientY
-    )?.closest('.study-row');
-
-    if (
-      !target ||
-      target === row ||
-      target.parentElement !== section
-    ) return;
-
-    const bounds = target.getBoundingClientRect();
-    const middle = bounds.top + bounds.height / 2;
-
-    section.insertBefore(
-      row,
-      event.clientY > middle
-        ? target.nextSibling
-        : target
-    );
-  });
-
-  async function stopDragging(save) {
-    if (!dragging) return;
-
-    dragging = false;
-    row.classList.remove('is-dragging');
-
-    const changedOrder = order();
-
-    try {
-      if (
-        save &&
-        changedOrder.join(',') !== originalOrder.join(',')
-      ) {
-        await moveTasks(changedOrder);
-      }
-    } catch (error) {
-      status(`Reorder failed: ${error.message}`);
-    } finally {
-      interaction = null;
-      await refresh();
-    }
+    members.get(t.key).tasks.push(t);
   }
-
-  grip.addEventListener(
-    'pointerup',
-    () => stopDragging(true)
-  );
-
-  grip.addEventListener(
-    'pointercancel',
-    () => stopDragging(false)
-  );
-
-  // Keyboard alternative: focus grip, press Up or Down
-  grip.addEventListener('keydown', async event => {
-    if (
-      !['ArrowUp', 'ArrowDown'].includes(event.key) ||
-      interaction || writing
-    ) return;
-
-    event.preventDefault();
-
-    const current = order();
-    const at = current.indexOf(Number(row.dataset.taskId));
-    const next = at + (
-      event.key === 'ArrowUp' ? -1 : 1
-    );
-
-    if (next < 0 || next >= current.length) return;
-
-    [current[at], current[next]] =
-      [current[next], current[at]];
-
-    interaction = 'drag';
-
-    try {
-      await moveTasks(current);
-    } catch (error) {
-      status(`Reorder failed: ${error.message}`);
-    } finally {
-      interaction = null;
-      await refresh();
-    }
-  });
-}
-
-// Build the grouped Study Board
-function display(snapshot) {
-  const holder = $('study-people');
-  holder.replaceChildren();
-
-  const people = new Map();
-
-  for (const person of snapshot.people || []) {
-    people.set(person.key, {
-      name: person.name,
-      seconds: person.seconds,
-      active: person.active,
-      tasks: []
-    });
-  }
-
-  for (const task of snapshot.tasks || []) {
-    if (!people.has(task.key)) {
-      people.set(task.key, {
-        name: task.name,
-        seconds: 0,
-        active: false,
-        tasks: []
-      });
-    }
-
-    people.get(task.key).tasks.push(task);
-  }
-
-  if (!people.size) {
-    holder.appendChild(
-      el('p', 'No study activity or tasks yet.')
-    );
+  const sorted = [...members.values()].sort((a, b) => a.name.localeCompare(b.name));
+  if (!sorted.length) {
+    const empty = el('p', 'No tasks or Activity time recorded for this day.');
+    empty.className = 'study-empty';
+    container.appendChild(empty);
     return;
   }
 
-  for (const [personKey, person] of [...people].sort(
-    (a, b) => a[1].name.localeCompare(b[1].name)
-  )) {
+  for (const person of sorted) {
     const section = el('section');
     section.className = 'study-person';
-
     const head = el('div');
     head.className = 'study-person-head';
+    head.tabIndex = 0;
+    head.setAttribute('role', 'button');
+    const count = person.tasks.filter(t => t.done).length;
+    const strong = el('strong', `${person.name} · ${count}/${person.tasks.length}`);
+    strong.title = person.name;
+    head.appendChild(strong);
+    const time = el('span');
+    time.className = 'study-time';
+    time.dataset.day = String(person.seconds || 0);
+    time.dataset.total = String(person.total_seconds || 0);
+    time.dataset.active = String(Boolean(person.active));
+    time.dataset.updated = String(Date.now());
+    time.dataset.date = snapshot.day;
+    head.appendChild(time);
 
-    const done = person.tasks.filter(
-      task => task.done
-    ).length;
-
-    head.appendChild(
-      el(
-        'strong',
-        `${person.name} · ${done}/${person.tasks.length} done`
-      )
-    );
-
-    const timer = el('span');
-    timer.className = 'study-time';
-    timer.dataset.base = String(person.seconds);
-    timer.dataset.updated = String(Date.now());
-    timer.dataset.active = String(person.active);
-
-    head.appendChild(timer);
-    section.appendChild(head);
+    const rows = el('div');
+    rows.className = 'study-task-rows';
+    const foldKey = `${scope}/${snapshot.day}/${person.key}`;
+    const isOpen = () => expanded.has(foldKey)
+      ? expanded.get(foldKey) : person.key === normalize(name);
+    const applyFold = () => {
+      section.classList.toggle('is-collapsed', !isOpen());
+      head.setAttribute('aria-expanded', String(isOpen()));
+    };
+    const toggle = () => { expanded.set(foldKey, !isOpen()); applyFold(); };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault(); toggle();
+    });
+    section.append(head, rows);
+    applyFold();
 
     for (const task of person.tasks) {
+      const mine = editable && person.key === normalize(name);
       const row = el('div');
       row.className = 'study-row';
       row.dataset.taskId = String(task.id);
-
-      const mine = personKey === normalize(name);
-
-      // Drag grip, only for the current person's tasks
       if (mine) {
         const grip = el('span', '⋮⋮');
         grip.className = 'study-grip';
-        grip.title = 'Drag to reorder (or use arrow keys)';
         grip.tabIndex = 0;
         grip.setAttribute('role', 'button');
-        grip.setAttribute(
-          'aria-label',
-          `Move ${task.text}`
-        );
-
+        grip.setAttribute('aria-label', `Move ${task.text}`);
+        grip.title = 'Drag or press Up/Down to reorder';
         row.appendChild(grip);
-        makeDraggable(grip, row, section);
+        enableDrag(grip, row, rows, snapshot.day);
       }
-
-      // Checkbox
-      const box = el('input');
-      box.type = 'checkbox';
-      box.checked = Boolean(task.done);
-      box.disabled = !mine;
-      box.setAttribute('aria-label', task.text);
-
-      box.addEventListener('change', async () => {
+      const checkbox = el('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = Boolean(task.done);
+      checkbox.disabled = !mine;
+      checkbox.setAttribute('aria-label', task.text);
+      if (mine) checkbox.addEventListener('change', async () => {
+        checkbox.disabled = true;
         try {
-          await taskWrite('check', {
-            p_task_id: task.id,
-            p_done: box.checked
-          });
-          await refresh();
+          await saveTask(snapshot.day, 'check', {p_task_id: task.id, p_done: checkbox.checked});
+          await afterTaskChange(snapshot.day);
         } catch (error) {
-          status(error.message);
-          box.checked = !box.checked;
-        }
+          checkbox.checked = !checkbox.checked;
+          showTaskError(error, snapshot.day);
+        } finally { checkbox.disabled = false; }
       });
-
-      row.appendChild(box);
-
-      // Click-to-edit task text
+      row.appendChild(checkbox);
       const label = el('span', task.text);
       label.className = 'study-task-text';
-
-      if (task.done) {
-        label.style.textDecoration = 'line-through';
-      }
-
+      if (task.done) label.style.textDecoration = 'line-through';
       if (mine) {
         label.dataset.editable = 'true';
         label.tabIndex = 0;
-        label.setAttribute('role', 'button');
-        label.setAttribute(
-          'aria-label',
-          `Rename ${task.text}`
-        );
         label.title = 'Click to rename';
-
-        label.addEventListener(
-          'click',
-          () => startInlineEdit(label, task)
-        );
-
+        label.setAttribute('role', 'button');
+        const edit = () => editInline(label, task, snapshot.day);
+        label.addEventListener('click', edit);
         label.addEventListener('keydown', event => {
-          if (
-            event.key === 'Enter' ||
-            event.key === ' '
-          ) {
-            event.preventDefault();
-            startInlineEdit(label, task);
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault(); edit();
           }
         });
       }
-
       row.appendChild(label);
-
-      // Delete button
       if (mine) {
         const remove = el('button', '✕');
         remove.type = 'button';
-        remove.setAttribute(
-          'aria-label',
-          `Delete ${task.text}`
-        );
-
+        remove.setAttribute('aria-label', `Delete ${task.text}`);
         remove.addEventListener('click', async () => {
-          try {
-            await taskWrite('delete', {
-              p_task_id: task.id
-            });
-            await refresh();
-          } catch (error) {
-            status(error.message);
-          }
+          try { await saveTask(snapshot.day, 'delete', {p_task_id: task.id});
+            await afterTaskChange(snapshot.day);
+          } catch (error) { showTaskError(error, snapshot.day); }
         });
-
         row.appendChild(remove);
       }
-
-      section.appendChild(row);
+      rows.appendChild(row);
     }
-
-    holder.appendChild(section);
+    container.appendChild(section);
   }
-
-  updateClocks();
+  updateStudyClocks();
 }
 
-// Refresh the board from Supabase
-async function refresh() {
-  if (!boardKey || reading || interaction) return;
+function showTaskError(error, day) {
+  status(error.message, day === todayET() && boardDialog.open
+    ? 'study-status' : 'study-day-status');
+}
 
-  reading = true;
+function editInline(label, task, day) {
+  if (interaction || writing) return;
+  interaction = 'rename';
+  const input = el('input');
+  input.className = 'study-inline-edit';
+  input.type = 'text';
+  input.maxLength = 200;
+  input.value = task.text;
+  label.replaceWith(input);
+  input.focus(); input.select();
+  let done = false;
+  async function finish(save) {
+    if (done) return;
+    done = true;
+    const value = input.value.trim();
+    input.replaceWith(label);
+    let error = null;
+    try {
+      if (save && value && value !== task.text)
+        await saveTask(day, 'rename', {p_task_id: task.id, p_task: value});
+    } catch (e) { error = e; }
+    finally {
+      interaction = null;
+      await afterTaskChange(day);
+      if (error) showTaskError(error, day);
+    }
+  }
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); void finish(true); }
+    if (event.key === 'Escape') { event.preventDefault(); void finish(false); }
+  });
+  input.addEventListener('blur', () => { void finish(true); });
+}
 
+// Pointer events live on document, avoiding lost pointer-up when moving the row.
+function enableDrag(grip, row, rows, day) {
+  let pointer = null;
+  let original = [];
+  const order = () => [...rows.querySelectorAll(':scope > .study-row')]
+    .map(r => Number(r.dataset.taskId));
+  function move(event) {
+    if (pointer !== event.pointerId) return;
+    event.preventDefault();
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.study-row');
+    if (!target || target === row || target.parentElement !== rows) return;
+    const rect = target.getBoundingClientRect();
+    rows.insertBefore(row, event.clientY > rect.top + rect.height / 2
+      ? target.nextSibling : target);
+  }
+  function clear() {
+    document.removeEventListener('pointermove', move, true);
+    document.removeEventListener('pointerup', up, true);
+    document.removeEventListener('pointercancel', cancel, true);
+    pointer = null;
+    row.style.pointerEvents = '';
+    row.classList.remove('is-dragging');
+  }
+  async function finish(save) {
+    const next = order();
+    clear();
+    let error = null;
+    try {
+      if (save && original.join(',') !== next.join(','))
+        await saveTask(day, 'move', {p_task_ids: next});
+    } catch (e) { error = e; }
+    finally {
+      interaction = null;
+      await afterTaskChange(day);
+      if (error) showTaskError(error, day);
+    }
+  }
+  function up(event) { if (pointer === event.pointerId) void finish(true); }
+  function cancel(event) { if (pointer === event.pointerId) void finish(false); }
+  grip.addEventListener('pointerdown', event => {
+    if (interaction || writing || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    event.preventDefault();
+    pointer = event.pointerId;
+    interaction = 'drag';
+    original = order();
+    row.classList.add('is-dragging');
+    row.style.pointerEvents = 'none';
+    document.addEventListener('pointermove', move, {capture: true, passive: false});
+    document.addEventListener('pointerup', up, true);
+    document.addEventListener('pointercancel', cancel, true);
+  });
+  grip.addEventListener('keydown', async event => {
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key) || interaction || writing) return;
+    event.preventDefault();
+    const ids = order();
+    const i = ids.indexOf(Number(row.dataset.taskId));
+    const j = i + (event.key === 'ArrowUp' ? -1 : 1);
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    interaction = 'drag';
+    let error = null;
+    try { await saveTask(day, 'move', {p_task_ids: ids}); }
+    catch (e) { error = e; }
+    finally { interaction = null; await afterTaskChange(day);
+      if (error) showTaskError(error, day); }
+  });
+}
+
+async function readDay(day) {
+  return rpc('pomo_study_calendar_read', {p_board_key: boardKey, p_day: day});
+}
+async function refreshToday() {
+  if (!boardKey || readingToday || interaction || !boardDialog.open) return;
+  readingToday = true;
   try {
-    const snapshot = await rpc(
-      'pomo_study_snapshot_v2',
-      {p_board_key: boardKey}
-    );
-
-    if (interaction) return;
-
-    display(snapshot);
-
-    status(
-      'Shared by everyone in this Discord channel · ' +
-      'Today (Eastern Time)'
-    );
-  } catch (error) {
-    status(
-      `Cannot load Study Board: ${error.message}`
-    );
-  } finally {
-    reading = false;
+    const day = todayET();
+    const result = await readDay(day);
+    if (!interaction && boardDialog.open && day === todayET()) {
+      renderPeople($('study-people'), result, {editable: true, scope: 'today'});
+      status(`Today's tasks · Eastern Time · time: day / all-time`);
+    }
+  } catch (error) { status(`Could not load Study Board: ${error.message}`); }
+  finally { readingToday = false; }
+}
+async function refreshSelectedDay() {
+  if (!dayDialog.open || !boardKey || readingDay || interaction) return;
+  readingDay = true;
+  const day = selectedDay;
+  try {
+    const result = await readDay(day);
+    if (dayDialog.open && day === selectedDay && !interaction) {
+      renderPeople($('study-day-people'), result, {editable: true, scope: 'history'});
+      status(`Shared tasks · ${day === todayET() ? 'Today' : 'Past day'} · time: day / all-time`,
+        'study-day-status');
+    }
+  } catch (error) { status(`Could not load this day: ${error.message}`, 'study-day-status'); }
+  finally {
+    readingDay = false;
+    if (dayDialog.open && selectedDay !== day) void refreshSelectedDay();
   }
 }
 
-// Add tasks
+async function afterTaskChange(day) {
+  previewCache.delete(day);
+  if (day === todayET() && boardDialog.open) await refreshToday();
+  if (dayDialog.open && selectedDay === day) await refreshSelectedDay();
+  if (calendarDialog.open) {
+    await loadMonth();
+    if (previewDay === day) void showPreview(day, true);
+  }
+}
+
 $('study-form').addEventListener('submit', async event => {
   event.preventDefault();
-
   const field = $('study-task');
   const task = field.value.trim();
-
   if (!task) return;
-
   try {
-    await taskWrite('add', {p_task: task});
+    await saveTask(todayET(), 'add', {p_task: task});
     field.value = '';
-    await refresh();
+    await afterTaskChange(todayET());
+  } catch (error) { status(error.message); }
+});
+$('study-day-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const field = $('study-day-task');
+  const task = field.value.trim();
+  if (!task) return;
+  try {
+    await saveTask(selectedDay, 'add', {p_task: task});
+    field.value = '';
+    await afterTaskChange(selectedDay);
+  } catch (error) { status(error.message, 'study-day-status'); }
+});
+
+// Month overview: one request returns all dates and participants' day totals.
+function shiftMonth(month, delta) {
+  const [year, m] = month.split('-').map(Number);
+  const date = new Date(Date.UTC(year, m - 1 + delta, 1, 12));
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-01`;
+}
+function renderMonth() {
+  $('study-month-label').textContent = monthFmt.format(dateUTC(calendarMonth));
+  const grid = $('study-month-grid');
+  grid.replaceChildren();
+  for (const weekday of ['S', 'M', 'T', 'W', 'T', 'F', 'S']) {
+    const label = el('div', weekday);
+    label.className = 'study-weekday';
+    grid.appendChild(label);
+  }
+  const first = dateUTC(calendarMonth);
+  const dayNumber = first.getUTCDay();
+  const [year, month] = calendarMonth.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0, 12)).getUTCDate();
+  for (let i = 0; i < dayNumber; i++) grid.appendChild(el('div'));
+  const dates = new Map(monthData.map(d => [d.day, d.people]));
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = `${calendarMonth.slice(0, 7)}-${pad(day)}`;
+    const people = dates.get(date) || [];
+    const cell = el('button');
+    cell.type = 'button';
+    cell.className = 'study-day-cell';
+    cell.disabled = date > todayET();
+    cell.dataset.day = date;
+    if (date === todayET()) cell.classList.add('is-today');
+    if (date === previewDay) cell.classList.add('is-previewed');
+    const number = el('span', String(day));
+    number.className = 'study-day-number';
+    cell.appendChild(number);
+    // Compact one-line name / completed / day-time summary per person.
+    // Full day + lifetime HH:MM:SS is visible on hover and click.
+    for (const person of people) {
+      const line = el('span');
+      line.className = 'study-day-person';
+      const personName = el('span', `${person.name} ${person.done}/${person.total}`);
+      personName.className = 'study-day-person-name';
+      const time = el('span', `${shortDuration(person.seconds)}/${shortDuration(person.total_seconds)}`);
+      time.className = 'study-day-person-stats';
+      line.append(personName, time);
+      line.title = `${person.name}: ${person.done}/${person.total} · Day ${duration(person.seconds)} / All-time ${duration(person.total_seconds)}`;
+      cell.appendChild(line);
+    }
+    cell.setAttribute('aria-label', `${dateTitle(date)}: ${people.length} participants. Open editable list.`);
+    if (!cell.disabled) {
+      cell.addEventListener('mouseenter', () => { void showPreview(date); });
+      cell.addEventListener('focus', () => { void showPreview(date); });
+      cell.addEventListener('click', () => { void openDay(date); });
+    }
+    grid.appendChild(cell);
+  }
+}
+
+async function loadMonth() {
+  if (!calendarDialog.open || !boardKey || readingMonth) return;
+  readingMonth = true;
+  const month = calendarMonth;
+  status('Loading month…', 'study-month-status');
+  try {
+    const result = await rpc('pomo_study_calendar_month', {
+      p_board_key: boardKey, p_month: month
+    });
+    if (calendarDialog.open && calendarMonth === month) {
+      monthData = Array.isArray(result) ? result : [];
+      renderMonth();
+      status('Hover for a task preview; click any past or current date to edit. Eastern Time.',
+        'study-month-status');
+    }
+  } catch (error) { status(`Could not load calendar: ${error.message}`, 'study-month-status'); }
+  finally {
+    readingMonth = false;
+    // Navigation while a request was in flight must not leave a blank month.
+    if (calendarDialog.open && calendarMonth !== month) void loadMonth();
+  }
+}
+
+async function showPreview(day, force = false) {
+  if (!boardKey || !calendarDialog.open || day > todayET()) return;
+  previewDay = day;
+  const generation = ++previewGeneration;
+  $('study-month-grid').querySelectorAll('.study-day-cell').forEach(cell => {
+    cell.classList.toggle('is-previewed', cell.dataset.day === day);
+  });
+  const panel = $('study-preview');
+  panel.replaceChildren(el('h3', `${dateTitle(day)} · loading…`));
+  try {
+    let record = previewCache.get(day);
+    if (force || !record || Date.now() - record.saved > 30000) {
+      record = {data: await readDay(day), saved: Date.now()};
+      previewCache.set(day, record);
+    }
+    if (generation !== previewGeneration || !calendarDialog.open) return;
+    panel.replaceChildren(el('h3', `${dateTitle(day)} · preview (click date to edit)`));
+    const list = el('div');
+    panel.appendChild(list);
+    renderPeople(list, record.data, {editable: false, scope: 'preview'});
   } catch (error) {
-    status(error.message);
+    if (generation === previewGeneration)
+      panel.replaceChildren(el('p', `Preview unavailable: ${error.message}`));
   }
+}
+async function openDay(day) {
+  if (!boardKey || day > todayET()) return;
+  selectedDay = day;
+  $('study-day-title').textContent = dateTitle(day);
+  $('study-day-task').value = '';
+  dayDialog.showModal();
+  await refreshSelectedDay();
+}
+function openCalendar() {
+  calendarMonth = firstOfMonth(todayET());
+  previewDay = null;
+  previewCache.clear();
+  $('study-preview').replaceChildren(el('h3', 'Hover over a date to preview its tasks'));
+  calendarDialog.showModal();
+  renderMonth();
+  if (!boardKey) status('Open this Activity inside Discord to view shared history.', 'study-month-status');
+  else void loadMonth();
+}
+
+$('study-calendar-open').addEventListener('click', openCalendar);
+$('study-calendar-close').addEventListener('click', () => calendarDialog.close());
+$('study-day-close').addEventListener('click', () => dayDialog.close());
+$('study-prev-month').addEventListener('click', () => {
+  calendarMonth = shiftMonth(calendarMonth, -1);
+  previewDay = null;
+  monthData = [];
+  renderMonth();
+  void loadMonth();
+});
+$('study-next-month').addEventListener('click', () => {
+  calendarMonth = shiftMonth(calendarMonth, 1);
+  previewDay = null;
+  monthData = [];
+  renderMonth();
+  void loadMonth();
+});
+$('study-this-month').addEventListener('click', () => {
+  calendarMonth = firstOfMonth(todayET());
+  previewDay = null;
+  monthData = [];
+  renderMonth();
+  void loadMonth();
 });
 
-// Open and close board
 $('study-open').addEventListener('click', () => {
-  dialog.showModal();
+  boardDialog.showModal();
+  if (!boardKey) status('Join the Activity inside Discord to use this board.');
+  else if (!name) status('Enter your study name in Settings to start your Activity clock.');
+  else void refreshToday();
+});
+$('study-close').addEventListener('click', () => boardDialog.close());
+for (const dialog of [boardDialog, calendarDialog, dayDialog]) {
+  dialog.addEventListener('click', event => {
+    if (event.target === dialog) dialog.close();
+  });
+}
 
-  if (!boardKey) {
-    status(
-      'Join the Pomodoro Activity in Discord ' +
-      'to use this board.'
-    );
-  } else if (!name) {
-    status(
-      'Enter your study name in Settings ' +
-      'to start the clock.'
-    );
-  } else {
-    refresh();
-  }
+// Same existing shared Pomodoro controls, reflected in the mini timer.
+const mainToggle = $('toggle');
+const mainReset = $('reset');
+const miniToggle = $('study-mini-toggle');
+const miniReset = $('study-mini-reset');
+function updateMiniTimer() {
+  if (!boardDialog.open) return;
+  $('study-mini-phase').textContent = $('phase')?.textContent?.trim() || 'Focus';
+  $('study-mini-countdown').textContent = $('countdown')?.textContent?.trim() || '50:00';
+  miniToggle.textContent = mainToggle?.textContent?.trim() || 'Pause';
+  miniToggle.disabled = !mainToggle || mainToggle.disabled;
+  miniReset.disabled = !mainReset || mainReset.disabled;
+}
+miniToggle.addEventListener('click', () => {
+  if (mainToggle && !mainToggle.disabled) { mainToggle.click(); updateMiniTimer(); }
+});
+miniReset.addEventListener('click', () => {
+  if (mainReset && !mainReset.disabled) { mainReset.click(); updateMiniTimer(); }
 });
 
-$('study-close').addEventListener(
-  'click',
-  () => dialog.close()
-);
-
-dialog.addEventListener('click', event => {
-  if (event.target === dialog) dialog.close();
-});
-
-// Activity-time heartbeat: every 20 seconds.
-// Runs even when document is hidden, when permitted.
+// Presence every 20s; only visible boards synchronize every 15s.
 setInterval(heartbeat, 20000);
-
-// Study Board synchronization: every 15 seconds.
-// Pauses refreshing while editing or dragging.
 setInterval(() => {
-  if (dialog.open && boardKey && !interaction) {
-    refresh();
+  const today = todayET();
+  if (today !== activeDay) {
+    activeDay = today;
+    expanded.clear();
+    previewCache.clear();
+    if (boardDialog.open) void refreshToday();
+    if (dayDialog.open) void refreshSelectedDay();
+    if (calendarDialog.open) void loadMonth();
   }
+  updateStudyClocks();
+}, 1000);
+setInterval(() => {
+  if (boardDialog.open && boardKey && !interaction) void refreshToday();
+  if (dayDialog.open && boardKey && !interaction) void refreshSelectedDay();
 }, 15000);
-
-// Displayed clock: every second (no API requests).
-setInterval(updateClocks, 1000);
+setInterval(() => {
+  if (calendarDialog.open && boardKey && !interaction) void loadMonth();
+}, 30000);
+setInterval(updateMiniTimer, 500);
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     heartbeat();
-
-    if (dialog.open) refresh();
+    if (boardDialog.open) void refreshToday();
+    if (dayDialog.open) void refreshSelectedDay();
+    if (calendarDialog.open) void loadMonth();
   }
 });
-
 window.addEventListener('pagehide', () => {
-  presence(name, sessionId, boardKey, true, true)
-    .catch(() => {});
+  presence(name, sessionId, boardKey, true, true).catch(() => {});
 });
-
 window.addEventListener('pageshow', event => {
-  if (event.persisted) {
-    sessionId = null;
-    heartbeat();
-  }
+  if (event.persisted) { sessionId = null; heartbeat(); }
 });
-
-
-
-/* Compact Study Board + reliable drag handling */
-
-const compactStudyStyle = document.createElement('style');
-
-compactStudyStyle.textContent = `
-#study-dialog {
-  width:min(560px,calc(100vw - 20px));
-  max-height:82dvh;
-  padding:14px;
-  overflow-y:auto;
-}
-
-#study-form { margin:9px 0 }
-#study-task,#study-add { min-height:32px }
-
-.study-person {
-  padding:6px 0 1px;
-}
-
-.study-person-head {
-  display:grid;
-  grid-template-columns:12px minmax(0,1fr) auto;
-  gap:7px;
-  align-items:center;
-  min-height:30px;
-  margin-bottom:3px;
-  cursor:pointer;
-  user-select:none;
-}
-
-.study-person-head::before {
-  content:'▾';
-  font-size:13px;
-  color:var(--muted);
-}
-
-.study-collapsed .study-person-head::before {
-  content:'▸';
-}
-
-.study-person-head strong {
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:13px;
-}
-
-.study-time {
-  font-size:11px;
-  white-space:nowrap;
-}
-
-.study-row {
-  gap:6px;
-  min-height:30px;
-  margin:2px 0;
-  font-size:12px;
-}
-
-.study-row button {
-  min-height:24px;
-  padding:2px 6px;
-}
-
-.study-grip {
-  padding:4px 3px;
-  flex:0 0 auto;
-}
-
-.study-collapsed > .study-row {
-  display:none;
-}
-`;
-
-document.head.appendChild(compactStudyStyle);
-
-// Remember which participant sections are open.
-const studyExpanded = new Map();
-const previousStudyDisplay = display;
-
-display = function(snapshot) {
-  previousStudyDisplay(snapshot);
-
-  const names = new Map();
-
-  for (const person of snapshot.people || []) {
-    names.set(person.key, person.name);
-  }
-
-  for (const task of snapshot.tasks || []) {
-    if (!names.has(task.key)) {
-      names.set(task.key, task.name);
-    }
-  }
-
-  const sorted = [...names].sort(
-    (a,b) => a[1].localeCompare(b[1])
-  );
-
-  const sections = [
-    ...$('study-people').querySelectorAll(
-      ':scope > .study-person'
-    )
-  ];
-
-  sorted.forEach(([key], index) => {
-    const section = sections[index];
-    const head = section?.querySelector(
-      '.study-person-head'
-    );
-
-    if (!head) return;
-
-    const isOpen = () =>
-      studyExpanded.has(key)
-        ? studyExpanded.get(key)
-        : key === normalize(name);
-
-    const renderFold = () => {
-      section.classList.toggle(
-        'study-collapsed', !isOpen()
-      );
-
-      head.setAttribute(
-        'aria-expanded', String(isOpen())
-      );
-    };
-
-    head.tabIndex = 0;
-    head.setAttribute('role','button');
-    head.setAttribute(
-      'aria-label','Expand or collapse tasks'
-    );
-
-    const toggle = () => {
-      studyExpanded.set(key,!isOpen());
-      renderFold();
-    };
-
-    head.addEventListener('click', toggle);
-
-    head.addEventListener('keydown', event => {
-      if (
-        event.key !== 'Enter' &&
-        event.key !== ' '
-      ) return;
-
-      event.preventDefault();
-      toggle();
-    });
-
-    renderFold();
-  });
-};
-
-// Fix drag-and-drop by listening on the document,
-// not on the grip that moves with the row.
-makeDraggable = function(grip, row, section) {
-  let pointerId = null;
-  let before = [];
-
-  const order = () =>
-    [...section.querySelectorAll(
-      ':scope > .study-row'
-    )].map(item => Number(item.dataset.taskId));
-
-  function onMove(event) {
-    if (pointerId !== event.pointerId) return;
-
-    event.preventDefault();
-
-    const target = document.elementFromPoint(
-      event.clientX, event.clientY
-    )?.closest('.study-row');
-
-    if (
-      !target ||
-      target === row ||
-      target.parentElement !== section
-    ) return;
-
-    const bounds = target.getBoundingClientRect();
-    const middle = bounds.top + bounds.height / 2;
-
-    section.insertBefore(
-      row,
-      event.clientY > middle
-        ? target.nextSibling
-        : target
-    );
-  }
-
-  function detach() {
-    document.removeEventListener(
-      'pointermove', onMove, true
-    );
-    document.removeEventListener(
-      'pointerup', onUp, true
-    );
-    document.removeEventListener(
-      'pointercancel', onCancel, true
-    );
-
-    pointerId = null;
-    row.style.pointerEvents = '';
-    row.classList.remove('is-dragging');
-  }
-
-  async function finish(shouldSave) {
-    const after = order();
-    detach();
-
-    let error = null;
-
-    try {
-      if (
-        shouldSave &&
-        after.join(',') !== before.join(',')
-      ) {
-        await moveTasks(after);
-      }
-    } catch (e) {
-      error = e;
-    } finally {
-      interaction = null;
-      await refresh();
-
-      if (error) {
-        status(`Could not reorder: ${error.message}`);
-      }
-    }
-  }
-
-  function onUp(event) {
-    if (event.pointerId === pointerId) {
-      void finish(true);
-    }
-  }
-
-  function onCancel(event) {
-    if (event.pointerId === pointerId) {
-      void finish(false);
-    }
-  }
-
-  grip.addEventListener('pointerdown', event => {
-    if (
-      interaction ||
-      writing ||
-      (event.pointerType === 'mouse' &&
-       event.button !== 0)
-    ) return;
-
-    event.preventDefault();
-
-    interaction = 'drag';
-    pointerId = event.pointerId;
-    before = order();
-
-    row.classList.add('is-dragging');
-    row.style.pointerEvents = 'none';
-
-    document.addEventListener(
-      'pointermove', onMove,
-      {capture:true,passive:false}
-    );
-
-    document.addEventListener(
-      'pointerup', onUp, true
-    );
-
-    document.addEventListener(
-      'pointercancel', onCancel, true
-    );
-  });
-
-  // Keyboard alternative: arrow keys on the grip.
-  grip.addEventListener('keydown', async event => {
-    if (
-      !['ArrowUp','ArrowDown'].includes(event.key) ||
-      interaction ||
-      writing
-    ) return;
-
-    event.preventDefault();
-
-    const ids = order();
-    const old = ids.indexOf(
-      Number(row.dataset.taskId)
-    );
-
-    const next = old + (
-      event.key === 'ArrowUp' ? -1 : 1
-    );
-
-    if (next < 0 || next >= ids.length) return;
-
-    [ids[old],ids[next]] =
-      [ids[next],ids[old]];
-
-    interaction = 'drag';
-
-    let error = null;
-
-    try {
-      await moveTasks(ids);
-    } catch (e) {
-      error = e;
-    } finally {
-      interaction = null;
-      await refresh();
-
-      if (error) {
-        status(`Could not reorder: ${error.message}`);
-      }
-    }
-  });
-};
-
-
-/* Compact shared Pomodoro timer inside Study Board */
-
-const miniTimerStyle = document.createElement('style');
-
-miniTimerStyle.textContent = `
-#study-mini-timer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  margin: 10px 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-}
-
-.study-mini-readout {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-#study-mini-phase {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-#study-mini-countdown {
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-}
-
-.study-mini-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.study-mini-controls button {
-  min-height: 32px;
-  padding: 6px 11px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.study-mini-controls button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-@media (max-width: 360px) {
-  #study-mini-timer {
-    padding: 9px;
-    gap: 7px;
-  }
-
-  #study-mini-countdown {
-    font-size: 21px;
-  }
-
-  .study-mini-controls button {
-    padding: 6px 8px;
-  }
-}
-`;
-
-document.head.appendChild(miniTimerStyle);
-
-// Build the mini timer
-const miniTimer = document.createElement('section');
-
-miniTimer.id = 'study-mini-timer';
-miniTimer.setAttribute(
-  'aria-label',
-  'Shared Pomodoro timer'
-);
-
-miniTimer.innerHTML = `
-  <div class="study-mini-readout">
-    <span id="study-mini-phase">Focus</span>
-    <strong id="study-mini-countdown">50:00</strong>
-  </div>
-
-  <div class="study-mini-controls">
-    <button
-      id="study-mini-toggle"
-      type="button"
-    >Pause</button>
-
-    <button
-      id="study-mini-reset"
-      type="button"
-    >Reset</button>
-  </div>
-`;
-
-// Place directly below the Study Board title
-dialog.querySelector('.study-top')
-  ?.insertAdjacentElement('afterend', miniTimer);
-
-// Reference the existing main Pomodoro controls
-const mainToggle = document.getElementById('toggle');
-const mainReset = document.getElementById('reset');
-const mainPhase = document.getElementById('phase');
-const mainCountdown = document.getElementById('countdown');
-
-const miniToggle = document.getElementById(
-  'study-mini-toggle'
-);
-
-const miniReset = document.getElementById(
-  'study-mini-reset'
-);
-
-// Forward button clicks to the real shared timer.
-// This preserves Supabase synchronization.
-miniToggle.addEventListener('click', () => {
-  if (mainToggle && !mainToggle.disabled) {
-    mainToggle.click();
-    updateMiniTimer();
-  }
-});
-
-miniReset.addEventListener('click', () => {
-  if (mainReset && !mainReset.disabled) {
-    mainReset.click();
-    updateMiniTimer();
-  }
-});
-
-
-// Mirror the main countdown and current timer phase
-function updateMiniTimer() {
-  if (!dialog.open) return;
-
-  const phase = mainPhase?.textContent?.trim() || 'Focus';
-
-  const countdown =
-    mainCountdown?.textContent?.trim() || '50:00';
-
-  const toggleText =
-    mainToggle?.textContent?.trim() || 'Pause';
-
-  const miniPhase = document.getElementById(
-    'study-mini-phase'
-  );
-
-  const miniCountdown = document.getElementById(
-    'study-mini-countdown'
-  );
-
-  miniPhase.textContent = phase;
-  miniCountdown.textContent = countdown;
-
-  miniToggle.textContent = toggleText;
-
-  miniToggle.disabled =
-    !mainToggle || mainToggle.disabled;
-
-  miniReset.disabled =
-    !mainReset || mainReset.disabled;
-}
-
-// Update display without making Supabase requests
-setInterval(updateMiniTimer, 500);
-
-// Initialize the display
-updateMiniTimer();
-
-
-
-
