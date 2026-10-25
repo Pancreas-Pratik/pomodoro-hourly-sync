@@ -472,3 +472,85 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+
+/* 2026-10-25: full-window compact Settings. Two balanced columns avoid scrolling. */
+#settings-dialog {
+  box-sizing:border-box;
+  width:min(920px,calc(100vw - 12px));
+  max-width:none;
+  height:calc(100dvh - 12px);
+  max-height:calc(100dvh - 12px);
+  overflow:hidden;
+  padding:clamp(7px,1.5dvh,14px);
+  gap:6px;
+  margin:auto;
+}
+#settings-dialog[open] {gap:6px}
+#settings-dialog .settings-dialog-top {flex-shrink:0;min-height:26px}
+#settings-dialog .settings-dialog-body {
+  flex:1;
+  min-height:0;
+  overflow:hidden;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  grid-template-rows:auto auto auto auto 1fr;
+  grid-template-areas:
+    "profile sound"
+    "durations sound"
+    "note sound"
+    "theme sound"
+    "message sound";
+  column-gap:clamp(10px,2vw,24px);
+  row-gap:clamp(5px,1vh,12px);
+  align-content:start;
+  align-items:start;
+  padding:2px;
+}
+#settings-dialog #study-name-box {grid-area:profile;margin:0;padding:3px 0 7px;border-top:0;border-bottom:1px solid var(--line)}
+#settings-dialog #study-name-box label {margin-bottom:4px}
+#settings-dialog #study-name {padding:7px;min-height:29px}
+#settings-dialog #study-name-box .hint {font-size:10px;margin:4px 0 0}
+#settings-dialog #durations {grid-area:durations;align-items:end;min-width:0}
+#settings-dialog #durations label {font-size:11px}
+#settings-dialog .input-wrap {height:33px;margin-top:4px}
+#settings-dialog .settings-dialog-body > .hint {grid-area:note;margin:0;font-size:10px}
+#settings-dialog .theme-setting {grid-area:theme;margin:0!important;padding:5px 0;min-width:0}
+#settings-dialog .theme-switch {padding:2px}
+#settings-dialog .theme-switch button {padding:5px 8px;font-size:11px;min-height:25px}
+#settings-dialog .sound-settings {
+  grid-area:sound;margin:0!important;padding:0;border-top:0;
+  min-width:0;
+}
+#settings-dialog .sound-heading {margin:0 0 6px}
+#settings-dialog .sound-row {gap:5px;margin:0 0 7px;grid-template-columns:minmax(65px,1fr) minmax(80px,1.25fr) auto}
+#settings-dialog .sound-row select {height:33px;padding:0 4px;font-size:11px}
+#settings-dialog .sound-row button {min-height:33px;padding:4px 7px}
+#settings-dialog .sound-volume {margin:8px 0}
+#settings-dialog #soundVolume {margin:5px 0}
+#settings-dialog .sound-settings .hint {font-size:10px;margin-top:3px}
+#settings-dialog #message {grid-area:message;margin:0}
+@media(max-width:560px) {
+  #settings-dialog .settings-dialog-body {
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:auto;
+    grid-template-areas:"profile" "durations" "note" "theme" "sound" "message";
+    row-gap:5px;
+  }
+  #settings-dialog .sound-row {grid-template-columns:minmax(60px,1fr) minmax(85px,1.4fr) auto}
+}
+@media(max-height:460px) {
+  #settings-dialog .settings-dialog-body {row-gap:3px}
+  #settings-dialog #study-name-box .hint,
+  #settings-dialog .settings-dialog-body > .hint,
+  #settings-dialog .sound-settings .hint {display:none}
+  #settings-dialog .sound-row {margin-bottom:3px}
+  #settings-dialog .sound-volume {margin:4px 0}
+}
+
+/* Settings widens as needed but stays only as tall as its content. */
+#settings-dialog {height:auto;max-height:calc(100dvh - 12px)}
+#settings-dialog .settings-dialog-body {flex:initial}
+#settings-dialog {height:min(340px,calc(100dvh - 12px))}
+@media(max-width:560px) {
+  #settings-dialog {height:min(470px,calc(100dvh - 12px))}
+}

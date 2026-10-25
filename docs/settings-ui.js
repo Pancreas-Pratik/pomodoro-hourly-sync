@@ -58,7 +58,26 @@
     content.appendChild(message);
   }
 
-  gear.addEventListener('click', () => dialog.showModal());
+  // Scale the compact settings only when a very short Discord viewport
+  // would otherwise clip controls. No settings scrollbar is needed.
+  function fitSettings() {
+    if (!dialog.open) return;
+    content.style.zoom = '1';
+    // Let layout settle after restoring natural size.
+    const available = content.clientHeight;
+    const needed = content.scrollHeight;
+    if (available > 0 && needed > available + 1) {
+      content.style.zoom = String(Math.max(0.6, Math.min(1, available / needed)));
+    }
+  }
+
+  gear.addEventListener('click', () => {
+    dialog.showModal();
+    requestAnimationFrame(fitSettings);
+  });
+  window.addEventListener('resize', () => {
+    if (dialog.open) requestAnimationFrame(fitSettings);
+  });
 
   dialog.querySelector('#close-settings')
     .addEventListener('click', () => dialog.close());
