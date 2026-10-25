@@ -147,47 +147,66 @@ function noteAction(type) {
   );
 }
 
+
 async function act(type, extra = {}) {
   if (pending) return;
 
   if (connecting) {
-    text('message', 'Connecting to the shared timer…');
+    text('message', 'Connecting to shared timer…');
     return;
   }
 
+  const previousState = {...state};
+
   try {
+    // Validate changes before updating the display.
     if (type === 'durations') {
       change(state, {type, ...extra}, now());
     }
 
     if (sharedReady) {
       pending = true;
+
+      // Update the interface immediately.
+      state = change(state, {type, ...extra}, now());
+      updateControls();
       tick();
 
       try {
+        // Save to Supabase and use its confirmed state.
         await shared.command(type, extra);
+        noteAction(type);
+
       } catch (error) {
+        // Restore the confirmed state if saving fails.
+        state = previousState;
+
+        await shared.refresh().catch(() => {});
+
         text(
           'message',
           `Shared update failed: ${error.message}`
         );
-        await shared.refresh().catch(() => {});
-        return;
+
       } finally {
         pending = false;
       }
+
     } else {
       state = change(state, {type, ...extra}, now());
+      updateControls();
+      noteAction(type);
     }
 
-    updateControls();
-    noteAction(type);
   } catch (error) {
     text('message', error.message);
+
   } finally {
+    updateControls();
     tick();
   }
 }
+
 
 $('toggle').onclick = () =>
   act(current(state, now()).running ? 'pause' : 'start');
