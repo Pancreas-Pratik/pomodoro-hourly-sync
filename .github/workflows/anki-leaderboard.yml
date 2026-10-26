@@ -2,8 +2,8 @@ name: Anki Leaderboard — live updates and daily history
 
 on:
   schedule:
-    # Every 5 minutes, including 03:50 and 03:55 Eastern.
-    # GitHub Actions may start late; last SUCCESSFUL pre-04:00 result is archived.
+    # Attempt collection every five minutes, including 03:50 and 03:55 ET.
+    # GitHub Actions may start late or skip a run under load.
     - cron: '*/5 * * * *'
       timezone: 'America/New_York'
   workflow_dispatch:
@@ -11,7 +11,6 @@ on:
 permissions:
   contents: read
 
-# Avoid concurrent scrapers overwriting each other out of order.
 concurrency:
   group: anki-leaderboard-collector
   cancel-in-progress: false
@@ -26,6 +25,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Show how this run was triggered
+        env:
+          ACTION_TRIGGER: ${{ github.event_name }}
+        run: echo "GitHub Actions trigger = ${ACTION_TRIGGER} (schedule = automatic, workflow_dispatch = manual)"
       - name: Install requirements
         run: python -m pip install requests==2.32.5 beautifulsoup4==4.14.2
       - name: Fetch opted-in users and save 5-minute current/daily statistics
