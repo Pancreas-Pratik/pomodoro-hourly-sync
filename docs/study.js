@@ -882,6 +882,7 @@ function positionPreview() {
   card.style.left = `${Math.round(left)}px`;
   card.style.top = `${Math.round(top)}px`;
 }
+window.addEventListener('pomo-study-preview-resize', positionPreview);
 $('study-preview').addEventListener('mouseenter', () => clearTimeout(previewHideTimer));
 $('study-preview').addEventListener('mouseleave', schedulePreviewHide);
 window.addEventListener('resize', () => {
@@ -942,6 +943,10 @@ async function showPreview(day, force = false, anchor = null) {
     const list = el('div');
     panel.appendChild(list);
     renderPeople(list, record.data, {editable: false, scope: 'preview'});
+    // Other modules can show dated read-only info in the floating hover.
+    window.dispatchEvent(new CustomEvent('pomo-study-preview-ready', {
+      detail: {day, boardKey}
+    }));
     positionPreview();
   } catch (error) {
     if (generation === previewGeneration) {
@@ -958,6 +963,9 @@ async function openDay(day) {
   $('study-day-task').value = '';
   dayDialog.showModal();
   await refreshSelectedDay();
+  window.dispatchEvent(new CustomEvent('pomo-study-day-open', {
+    detail: {day, boardKey}
+  }));
 }
 function openCalendar() {
   calendarMonth = firstOfMonth(todayET());
