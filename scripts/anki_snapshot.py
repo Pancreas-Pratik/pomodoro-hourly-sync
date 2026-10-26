@@ -1,4 +1,4 @@
-"""Minimal Pomo: fetch opt-in users' PUBLIC Anki profile scores every five minutes.
+"""Minimal Pomo: fetch opt-in users' PUBLIC Anki profile scores on an hourly schedule.
 
 One snapshot per username per Anki day (4 AM Eastern rollover): the last
 successful pre-rollover write becomes that day's calendar history.
