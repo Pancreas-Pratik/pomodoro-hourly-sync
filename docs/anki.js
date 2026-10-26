@@ -24,46 +24,40 @@ if (board && toDos && settings) {
     #study-anki[open] summary::before {content:'▾'}
     #study-anki-summary-status {margin-left:auto;min-width:0;font-size:10px;
       font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #study-anki-content {padding:4px 0 2px;min-width:0}
-    .study-anki-grid {display:grid;
-      grid-template-columns:minmax(17px,.35fr) minmax(66px,1.6fr) minmax(39px,.85fr)
-      minmax(42px,.9fr) minmax(29px,.6fr) minmax(72px,1.45fr)
-      minmax(37px,.8fr) minmax(36px,.7fr);
-      gap:0 3px;align-items:center;min-width:0}
-    .study-anki-grid > * {min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-      padding:4px 1px;font-size:clamp(9px,1.2vw,12px);font-variant-numeric:tabular-nums}
-    .study-anki-grid .study-anki-label {color:var(--muted);font-size:clamp(8px,1vw,11px);
-      border-bottom:1px solid var(--line)}
-    .study-anki-grid .study-anki-user {font-weight:600}
-    .study-anki-grid .study-anki-cell {text-align:right}
-    .study-anki-grid .study-anki-rank {text-align:center;font-weight:600}
-    .study-anki-grid .study-anki-past {white-space:pre-line;line-height:1.15}
-    #study-anki-foot {margin:2px 0;color:var(--muted);font-size:10px;line-height:1.25}
+    #study-anki-content {padding:4px 0 2px;min-width:0;max-height:min(59dvh,570px);overflow:auto}
+    .study-anki-card {padding:9px 2px;border-bottom:1px solid var(--line)}
+    .study-anki-card:last-of-type {border-bottom:0}
+    .study-anki-card-title {display:flex;gap:7px;align-items:baseline;min-width:0;
+      font-size:12px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+    .study-anki-rank {color:var(--muted);font-variant-numeric:tabular-nums;flex:0 0 auto}
+    .study-anki-card-name {min-width:0}
+    .study-anki-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:6px 10px;padding:7px 0 2px 22px}
+    .study-anki-metric {min-width:0;display:flex;flex-direction:column;gap:2px}
+    .study-anki-label {color:var(--muted);font-size:10px;line-height:1.2}
+    .study-anki-value {font-size:11px;line-height:1.3;overflow-wrap:anywhere;
+      font-variant-numeric:tabular-nums}
+    .study-anki-subvalue {font-size:10px;color:var(--muted)}
     .study-anki-pages {display:flex;align-items:center;justify-content:center;gap:10px;font-size:10px}
     .study-anki-pages button {min-height:23px;padding:2px 8px;font-size:10px}
     #study-dialog:has(#study-anki[open]) #study-people {flex:0 1 auto;overflow:hidden}
-    #study-dialog:has(#study-anki[open]) #study-people .study-task-rows,
-    #study-dialog:has(#study-anki[open]) #study-people .study-task-pages {display:none}
     @media(max-width:480px){
-      .study-anki-grid {grid-template-columns:17px minmax(61px,1.6fr) minmax(32px,.7fr)
-        minmax(36px,.8fr) minmax(25px,.5fr) minmax(63px,1.3fr)
-        minmax(31px,.6fr) minmax(31px,.55fr);gap:0 2px}
-      .study-anki-grid > * {font-size:9px;padding:3px 0}
-      .study-anki-grid .study-anki-label {font-size:8px}
+      .study-anki-metrics {grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 9px}
+      .study-anki-card-title {font-size:11px}
       #study-anki summary {font-size:11px}
     }
-    @media(max-height:480px){.study-anki-grid > * {padding-block:2px}}
-    /* Floating month hover: always-open Anki summary, no separate scrolling. */
+    @media(max-height:480px){.study-anki-card {padding:5px 2px}}
+    /* Calendar history uses the same complete, icon-free statistics. */
     #study-anki-hover,#study-anki-history {min-width:0;border-top:1px solid var(--line);padding-top:5px;margin-top:6px}
     #study-anki-hover summary,#study-anki-history summary {font-size:11px;font-weight:600;list-style:none}
     #study-anki-hover summary::-webkit-details-marker,#study-anki-history summary::-webkit-details-marker {display:none}
-    #study-anki-hover .study-anki-grid > *,#study-anki-history .study-anki-grid > * {
-      padding:2px 0;font-size:8px}
-    #study-anki-hover .study-anki-grid,#study-anki-history .study-anki-grid {
-      grid-template-columns:14px minmax(58px,1.6fr) minmax(30px,.7fr)
-        minmax(32px,.7fr) minmax(22px,.5fr) minmax(58px,1.3fr)
-        minmax(28px,.6fr) minmax(29px,.55fr);gap:0 1px}
-    #study-day-dialog #study-anki-history {flex:0 0 auto;max-height:40dvh;overflow:hidden}
+    #study-anki-hover .study-anki-card,#study-anki-history .study-anki-card {padding:4px 0}
+    #study-anki-hover .study-anki-metrics,#study-anki-history .study-anki-metrics {
+      grid-template-columns:repeat(3,minmax(0,1fr));gap:3px 5px;padding:3px 0 2px 14px}
+    #study-anki-hover .study-anki-card-title,#study-anki-history .study-anki-card-title {font-size:10px}
+    #study-anki-hover .study-anki-label,#study-anki-history .study-anki-label {font-size:8px}
+    #study-anki-hover .study-anki-value,#study-anki-history .study-anki-value {font-size:9px}
+    #study-day-dialog #study-anki-history {flex:0 0 auto;max-height:40dvh;overflow:auto}
     #study-preview #study-anki-hover {pointer-events:none}
   `;
   document.head.appendChild(css);
@@ -88,7 +82,7 @@ if (board && toDos && settings) {
   const panel = document.createElement('details');
   panel.id = 'study-anki';
   const summary = document.createElement('summary');
-  summary.appendChild(document.createTextNode('🏆 Anki Leaderboard'));
+  summary.appendChild(document.createTextNode('Anki Leaderboard'));
   const panelStatus = document.createElement('span');
   panelStatus.id = 'study-anki-summary-status';
   panelStatus.textContent = 'Expand to view';
@@ -120,38 +114,83 @@ if (board && toDos && settings) {
   };
   const number = value => value == null ? '—' : Number(value).toLocaleString('en-US');
 
-  // Shared Anki-style grid for the live board and saved calendar snapshots.
-  // Reviews today, NOT 31-day reviews, decides rank after every collection.
-  function scoreGrid(scores, startRank = 1) {
-    const grid = document.createElement('div');
-    grid.className = 'study-anki-grid';
-    function cell(value, klass = '', tooltip = '') {
-      const span = document.createElement('span');
-      span.className = klass;
-      span.textContent = String(value);
-      span.title = tooltip || String(value);
-      grid.appendChild(span);
+  // User names come from their Study Board setting, not their Anki account.
+  // Historical names are also read from the Study Board's saved people/tasks.
+  let configuredNames = new Map();
+  const namesFromStudy = snapshot => {
+    const names = new Map();
+    for (const item of [...(snapshot?.people || []), ...(snapshot?.tasks || [])]) {
+      const display = String(item.name || item.display_name || '').trim();
+      const identifier = key(item.key || display);
+      if (identifier && display && !names.has(identifier)) names.set(identifier, display);
     }
-    const headers = ['#', 'Username', 'Reviews', 'Time', 'Streak', 'Past 31d', 'Ret.', 'Country'];
-    headers.forEach((title, i) => cell(title, 'study-anki-label' + (i > 1 ? ' study-anki-cell' : ''),
-      ['Rank within this channel', 'Anki username', 'Reviews today', 'Minutes today',
-       'Streak (days)', 'Past 31 days: average per day and total', 'Retention %', 'Country'][i]));
+    return names;
+  };
+  const displayName = (row, names = configuredNames) => {
+    const studyKey = key(row.study_name_key || '');
+    const locallyConfigured = studyKey && studyKey === key(person()) ? person() : '';
+    const named = row.study_name || row.display_name ||
+      names.get(studyKey) || locallyConfigured || row.study_name_key;
+    const label = String(named || '').trim();
+    const username = String(row.username || '').trim();
+    return label && username ? `${label} (${username})` : (label || username);
+  };
+  const appendMetric = (metrics, label, value, subvalue = '') => {
+    const item = document.createElement('div');
+    item.className = 'study-anki-metric';
+    const labelNode = document.createElement('span');
+    labelNode.className = 'study-anki-label';
+    labelNode.textContent = label;
+    const valueNode = document.createElement('span');
+    valueNode.className = 'study-anki-value';
+    valueNode.textContent = String(value);
+    item.append(labelNode, valueNode);
+    if (subvalue) {
+      const sub = document.createElement('span');
+      sub.className = 'study-anki-subvalue';
+      sub.textContent = subvalue;
+      item.appendChild(sub);
+    }
+    metrics.appendChild(item);
+  };
+  // Show every stored Anki metric, including Country, League and Group.
+  function scoreGrid(scores, startRank = 1, names = configuredNames) {
+    const list = document.createElement('div');
+    list.className = 'study-anki-list';
     scores.forEach((row, i) => {
-      const extra = [row.league && `League: ${row.league}`,
-        row.anki_group && `Group: ${row.anki_group}`].filter(Boolean).join(' · ');
-      cell(startRank + i, 'study-anki-rank');
-      cell(row.username, 'study-anki-user', extra ? `${row.username} · ${extra}` : row.username);
-      cell(number(row.reviews), 'study-anki-cell', 'Reviews today');
-      cell(fmtMinutes(row.minutes), 'study-anki-cell', 'Time today');
-      cell(row.streak == null ? '—' : `${row.streak}d`, 'study-anki-cell');
-      const past = row.reviews_31d == null ? '—' :
-        `${Math.floor(Number(row.reviews_31d) / 31)}/d\n(${number(row.reviews_31d)})`;
-      cell(past, 'study-anki-cell study-anki-past', 'Past 31 days: average per day / total');
-      cell(row.retention == null ? '—' : `${Number(row.retention).toFixed(1).replace(/\.0$/, '')}%`,
-        'study-anki-cell');
-      cell(row.country && !['-', '—'].includes(row.country) ? row.country : '—', 'study-anki-cell');
+      const card = document.createElement('section');
+      card.className = 'study-anki-card';
+      const title = document.createElement('div');
+      title.className = 'study-anki-card-title';
+      const rank = document.createElement('span');
+      rank.className = 'study-anki-rank';
+      rank.textContent = `${startRank + i}.`;
+      const name = document.createElement('span');
+      name.className = 'study-anki-card-name';
+      name.textContent = displayName(row, names);
+      title.append(rank, name);
+      card.appendChild(title);
+      const metrics = document.createElement('div');
+      metrics.className = 'study-anki-metrics';
+      const last31 = row.reviews_31d == null ? '—' : number(row.reviews_31d);
+      const average = row.reviews_31d == null ? '' :
+        `${(Number(row.reviews_31d) / 31).toFixed(1)} per day`;
+      appendMetric(metrics, 'Reviews today', number(row.reviews));
+      appendMetric(metrics, 'Time today', fmtMinutes(row.minutes));
+      appendMetric(metrics, 'Streak', row.streak == null ? '—' : `${row.streak} days`);
+      appendMetric(metrics, 'Reviews past 31 days', last31, average);
+      appendMetric(metrics, 'Retention', row.retention == null ? '—' : `${Number(row.retention).toFixed(1)}%`);
+      appendMetric(metrics, 'Country', row.country || '—');
+      appendMetric(metrics, 'League', row.league || '—');
+      appendMetric(metrics, 'Group', row.anki_group || '—');
+      appendMetric(metrics, 'Anki review rank', number(row.review_rank));
+      appendMetric(metrics, 'Anki day', row.anki_day || '—');
+      appendMetric(metrics, 'Last saved', row.captured_at
+        ? new Date(row.captured_at).toLocaleString() : '—');
+      card.appendChild(metrics);
+      list.appendChild(card);
     });
-    return grid;
+    return list;
   }
 
   async function rpc(method, params) {
@@ -176,6 +215,12 @@ if (board && toDos && settings) {
       ? `Registered for this Discord channel as ${current.username}. Save blank to remove.`
       : 'Optional. Save your username to join this channel’s leaderboard.';
   }
+
+  window.addEventListener('pomo-study-roster', event => {
+    if (event.detail?.boardKey !== boardKey) return;
+    configuredNames = namesFromStudy(event.detail?.snapshot);
+    if (panel.open && allRows.length) draw();
+  });
 
   function draw() {
     body.replaceChildren();
@@ -248,6 +293,7 @@ if (board && toDos && settings) {
     fetchedAt = 0;
     fetchedBoard = null;
     pageIndex = 0;
+    configuredNames = new Map();
     if (!inputDirty) input.value = '';
     void load(true);
   }
@@ -301,7 +347,7 @@ if (board && toDos && settings) {
     details.id = id;
     details.open = true;
     const caption = document.createElement('summary');
-    caption.textContent = '🏆 Anki Leaderboard · ' + day;
+    caption.textContent = 'Anki Leaderboard · ' + day;
     const content = document.createElement('div');
     content.textContent = 'Loading Anki history…';
     details.append(caption, content);
@@ -310,16 +356,19 @@ if (board && toDos && settings) {
       window.dispatchEvent(new Event('pomo-study-preview-resize'));
     }
     try {
-      const rows = await rpc('pomo_anki_day_scores', {
-        p_board_key: boardKey, p_day: day
-      });
+      const [rows, studyResult] = await Promise.all([
+        rpc('pomo_anki_day_scores', {p_board_key: boardKey, p_day: day}),
+        rpc('pomo_study_calendar_read', {p_board_key: boardKey, p_day: day})
+          .catch(() => null)
+      ]);
+      const historicalNames = studyResult ? namesFromStudy(studyResult) : configuredNames;
       if (!details.isConnected) return;
       content.replaceChildren();
       if (!Array.isArray(rows) || !rows.length) {
         content.textContent = 'No Anki history recorded for this day.';
       } else {
         const sorted = rows.sort((a, b) => (b.reviews ?? -1) - (a.reviews ?? -1));
-        content.appendChild(scoreGrid(sorted.slice(0, limit)));
+        content.appendChild(scoreGrid(sorted.slice(0, limit), 1, historicalNames));
         if (sorted.length > limit) {
           const note = document.createElement('p');
           note.className = 'study-task-more';
@@ -355,8 +404,13 @@ if (board && toDos && settings) {
     document.getElementById('study-anki-history')?.remove();
   });
 
+  window.addEventListener('pomo-study-person-expanded', () => {
+    if (panel.open) panel.open = false;
+  });
+
   panel.addEventListener('toggle', () => {
     if (panel.open) {
+      window.dispatchEvent(new Event('pomo-study-collapse-people'));
       if (!boardKey) body.textContent = 'Open this Activity in Discord first.';
       else void load();
     }

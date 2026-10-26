@@ -449,6 +449,7 @@ function renderPeople(container, snapshot, {editable = false, scope = 'today'} =
     const rows = el('div');
     rows.className = 'study-task-rows';
     const foldKey = `${scope}/${snapshot.day}/${person.key}`;
+    section.dataset.foldKey = foldKey;
     const isOpen = () => expanded.has(foldKey)
       ? expanded.get(foldKey) : person.key === normalize(name);
     const applyFold = () => {
@@ -456,7 +457,11 @@ function renderPeople(container, snapshot, {editable = false, scope = 'today'} =
       head.setAttribute('aria-expanded', String(isOpen()));
     };
     const toggle = () => {
-      expanded.set(foldKey, !isOpen());
+      const next = !isOpen();
+      expanded.set(foldKey, next);
+      if (next && scope === 'today') {
+        window.dispatchEvent(new Event('pomo-study-person-expanded'));
+      }
       if (editable && !preview) renderPeople(container, snapshot, {editable, scope});
       else applyFold();
       if (preview) requestAnimationFrame(positionPreview);
@@ -563,6 +568,15 @@ function renderPeople(container, snapshot, {editable = false, scope = 'today'} =
   }
   updateStudyClocks();
 }
+
+// When Anki expands, collapse today's individual task dropdowns as well.
+window.addEventListener('pomo-study-collapse-people', () => {
+  for (const section of $('study-people')?.querySelectorAll('.study-person') || []) {
+    if (section.dataset.foldKey) expanded.set(section.dataset.foldKey, false);
+    section.classList.add('is-collapsed');
+    section.querySelector('.study-person-head')?.setAttribute('aria-expanded', 'false');
+  }
+});
 
 function showTaskError(error, day) {
   status(error.message, day === todayET() && boardDialog.open
@@ -705,6 +719,9 @@ async function refreshToday() {
     const result = await readDay(day);
     if (!interaction && boardDialog.open && day === todayET()) {
       renderPeople($('study-people'), result, {editable: true, scope: 'today'});
+      window.dispatchEvent(new CustomEvent('pomo-study-roster', {
+        detail: {boardKey, snapshot: result}
+      }));
       status(`Today's tasks · Eastern Time · time: day / all-time`);
     }
   } catch (error) { status(`Could not load Study Board: ${error.message}`); }
