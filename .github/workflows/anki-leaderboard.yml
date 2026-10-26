@@ -4,8 +4,7 @@ on:
   schedule:
     # Attempt collection every five minutes, including 03:50 and 03:55 ET.
     # GitHub Actions may start late or skip a run under load.
-    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
-      timezone: 'America/New_York'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
