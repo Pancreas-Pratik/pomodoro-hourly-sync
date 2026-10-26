@@ -67,18 +67,54 @@ if (board && toDos && settings) {
       #study-anki summary {font-size:11px}
     }
     @media(max-height:480px){.study-anki-card {padding:5px 2px}}
-    /* Calendar history uses the same complete, icon-free statistics. */
-    #study-anki-hover,#study-anki-history {min-width:0;border-top:1px solid var(--line);padding-top:5px;margin-top:6px}
-    #study-anki-hover summary,#study-anki-history summary {font-size:11px;font-weight:600;list-style:none}
-    #study-anki-hover summary::-webkit-details-marker,#study-anki-history summary::-webkit-details-marker {display:none}
-    #study-anki-hover .study-anki-card,#study-anki-history .study-anki-card {padding:4px 0}
-    #study-anki-hover .study-anki-metrics,#study-anki-history .study-anki-metrics {
-      grid-template-columns:repeat(3,minmax(0,1fr));gap:3px 5px;padding:3px 0 2px 14px}
-    #study-anki-hover .study-anki-card-title,#study-anki-history .study-anki-card-title {font-size:10px}
-    #study-anki-hover .study-anki-label,#study-anki-history .study-anki-label {font-size:8px}
-    #study-anki-hover .study-anki-value,#study-anki-history .study-anki-value {font-size:9px}
-    #study-day-dialog #study-anki-history {flex:0 0 auto;max-height:40dvh;overflow:auto}
+    /* Calendar hover and day-click history use the same one-row-per-person
+       table as the Study Board. Every column stays visible without scrolling. */
+    #study-calendar #study-preview {width:min(1080px,calc(100vw - 16px))}
+    #study-anki-hover,#study-anki-history {
+      min-width:0;width:100%;border-top:1px solid var(--line);
+      padding-top:4px;margin-top:5px;overflow:hidden;
+    }
+    #study-anki-hover summary,#study-anki-history summary {
+      font-size:11px;font-weight:600;list-style:none;cursor:default;
+    }
+    #study-anki-hover summary::-webkit-details-marker,
+    #study-anki-history summary::-webkit-details-marker {display:none}
+    #study-anki-hover .study-anki-table,#study-anki-history .study-anki-table {
+      width:100%;border-collapse:collapse;table-layout:fixed;
+      font-variant-numeric:tabular-nums;font-size:clamp(6px,.85vw,10px);
+    }
+    #study-anki-hover .study-anki-table th,#study-anki-history .study-anki-table th {
+      font-size:clamp(6px,.8vw,9px);font-weight:500;color:var(--muted);
+      text-align:left;line-height:1.1;white-space:normal;
+      padding:3px 2px;border-bottom:1px solid var(--line);
+    }
+    #study-anki-hover .study-anki-table td,#study-anki-history .study-anki-table td {
+      padding:4px 2px;vertical-align:middle;line-height:1.15;
+      border-bottom:1px solid var(--line);overflow-wrap:anywhere;word-break:normal;
+    }
+    #study-anki-hover .study-anki-table tr:last-child td,
+    #study-anki-history .study-anki-table tr:last-child td {border-bottom:0}
+    #study-anki-hover .study-anki-table td:first-child,
+    #study-anki-history .study-anki-table td:first-child {font-weight:600}
+    #study-anki-hover .study-anki-table .anki-sub,
+    #study-anki-history .study-anki-table .anki-sub {
+      display:block;margin-top:1px;color:var(--muted);
+      font-size:clamp(5px,.75vw,8px);line-height:1.1;
+    }
+    #study-anki-hover .study-anki-foot,#study-anki-history .study-anki-foot {
+      margin:3px 0 0;font-size:9px;color:var(--muted);
+    }
+    #study-day-dialog #study-anki-history {flex:0 0 auto;max-height:none;overflow:hidden}
     #study-preview #study-anki-hover {pointer-events:none}
+    @media(max-width:600px){
+      #study-anki-hover .study-anki-table,#study-anki-history .study-anki-table {
+        font-size:clamp(5px,1.25vw,8px)}
+      #study-anki-hover .study-anki-table th,#study-anki-history .study-anki-table th {
+        font-size:clamp(5px,1.1vw,7px);padding:2px 1px}
+      #study-anki-hover .study-anki-table td,#study-anki-history .study-anki-table td {
+        padding:3px 1px}
+    }
+
   `;
   document.head.appendChild(css);
 
@@ -433,13 +469,11 @@ if (board && toDos && settings) {
     }
   });
 
-  // Calendar hover and day editor use the dated Anki snapshot, not live
-  // data from the current day. Your to-dos are expanded by study.js;
-  // other participants' to-dos default to collapsed. Anki stays expanded.
+  // Calendar hover and day editor use the saved snapshot for the selected
+  // date, rendered in the same compact table as the current leaderboard.
   async function drawHistorical(day, host, id, limit) {
-    const existing = document.getElementById(id);
-    existing?.remove();
-    if (!boardKey || !host || !host.isConnected) return;
+    document.getElementById(id)?.remove();
+    if (!boardKey || !host || !host.isConnected || !day) return;
     const details = document.createElement('details');
     details.id = id;
     details.open = true;
@@ -449,9 +483,8 @@ if (board && toDos && settings) {
     content.textContent = 'Loading Anki history…';
     details.append(caption, content);
     host.appendChild(details);
-    if (id === 'study-anki-hover') {
-      window.dispatchEvent(new Event('pomo-study-preview-resize'));
-    }
+    const isHover = id === 'study-anki-hover';
+    if (isHover) window.dispatchEvent(new Event('pomo-study-preview-resize'));
     try {
       const [rows, studyResult] = await Promise.all([
         rpc('pomo_anki_day_scores', {p_board_key: boardKey, p_day: day}),
@@ -464,26 +497,57 @@ if (board && toDos && settings) {
       if (!Array.isArray(rows) || !rows.length) {
         content.textContent = 'No Anki history recorded for this day.';
       } else {
-        const sorted = rows.sort((a, b) => (b.reviews ?? -1) - (a.reviews ?? -1));
-        content.appendChild(scoreGrid(sorted.slice(0, limit), 1, historicalNames));
-        if (sorted.length > limit) {
-          const note = document.createElement('p');
-          note.className = 'study-task-more';
-          note.textContent = `+${sorted.length - limit} more users`;
-          content.appendChild(note);
-        }
-        const foot = document.createElement('p');
-        foot.className = 'study-anki-foot';
-        const captured = sorted.map(r => r.captured_at).filter(Boolean).sort().at(-1);
-        foot.textContent = captured
-          ? `Last saved: ${new Date(captured).toLocaleString()}`
-          : 'No stats collected yet.';
-        content.appendChild(foot);
+        const sorted = [...rows].sort((a, b) => (b.reviews ?? -1) - (a.reviews ?? -1));
+        // Page instead of scroll: on the hover, the day click reveals more users.
+        // Keep the clicked day's task editor visible at shorter window heights.
+        const pageSize = isHover
+          ? Math.max(1, Math.min(limit, Math.floor((window.innerHeight - 210) / 55)))
+          : Math.max(1, Math.min(limit, Math.floor((window.innerHeight - 285) / 42)));
+        let page = 0;
+        const paint = () => {
+          if (!details.isConnected) return;
+          content.replaceChildren(scoreTable(
+            sorted.slice(page * pageSize, (page + 1) * pageSize),
+            page * pageSize + 1, historicalNames
+          ));
+          if (sorted.length > pageSize) {
+            if (isHover) {
+              const note = document.createElement('p');
+              note.className = 'study-task-more';
+              note.textContent = `+${sorted.length - pageSize} more participants · click the date`;
+              content.appendChild(note);
+            } else {
+              const nav = document.createElement('div');
+              nav.className = 'study-anki-pages';
+              const previous = document.createElement('button');
+              previous.type = 'button'; previous.textContent = '‹ Prev';
+              previous.disabled = page === 0;
+              const next = document.createElement('button');
+              next.type = 'button'; next.textContent = 'Next ›';
+              next.disabled = (page + 1) * pageSize >= sorted.length;
+              const counter = document.createElement('span');
+              counter.textContent = `${page + 1} / ${Math.ceil(sorted.length / pageSize)}`;
+              previous.onclick = () => { page--; paint(); };
+              next.onclick = () => { page++; paint(); };
+              nav.append(previous, counter, next);
+              content.appendChild(nav);
+            }
+          }
+          const foot = document.createElement('p');
+          foot.className = 'study-anki-foot';
+          const captured = sorted.map(r => r.captured_at).filter(Boolean).sort().at(-1);
+          foot.textContent = captured
+            ? `Last saved: ${new Date(captured).toLocaleString()}`
+            : 'No stats collected yet.';
+          content.appendChild(foot);
+          if (isHover) window.dispatchEvent(new Event('pomo-study-preview-resize'));
+        };
+        paint();
       }
     } catch (error) {
       if (details.isConnected) content.textContent = `Anki history unavailable: ${error.message}`;
     } finally {
-      if (id === 'study-anki-hover' && details.isConnected) {
+      if (isHover && details.isConnected) {
         window.dispatchEvent(new Event('pomo-study-preview-resize'));
       }
     }
