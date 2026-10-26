@@ -1,10 +1,8 @@
 name: Anki Leaderboard — live updates and daily history
 
+# Supabase Cron triggers this workflow through the GitHub Actions dispatch API.
+# Keep workflow_dispatch for both Supabase and optional manual runs.
 on:
-  schedule:
-    # Attempt collection hourly at five minutes past the hour (UTC).
-    # GitHub Actions may start late or skip a run under load.
-    - cron: '5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +25,7 @@ jobs:
       - name: Show how this run was triggered
         env:
           ACTION_TRIGGER: ${{ github.event_name }}
-        run: echo "GitHub Actions trigger = ${ACTION_TRIGGER} (schedule = automatic, workflow_dispatch = manual)"
+        run: echo "GitHub Actions trigger = ${ACTION_TRIGGER} (workflow_dispatch = Supabase Cron or manual run)"
       - name: Install requirements
         run: python -m pip install requests==2.32.5 beautifulsoup4==4.14.2
       - name: Fetch opted-in users and save current/daily statistics
