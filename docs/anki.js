@@ -24,7 +24,27 @@ if (board && toDos && settings) {
     #study-anki[open] summary::before {content:'▾'}
     #study-anki-summary-status {margin-left:auto;min-width:0;font-size:10px;
       font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #study-anki-content {padding:4px 0 2px;min-width:0;max-height:min(59dvh,570px);overflow:auto}
+    #study-anki-content {padding:3px 0 2px;min-width:0;max-height:min(59dvh,570px);overflow:hidden}
+    /* One participant per row; all columns fit the panel without horizontal scrolling. */
+    #study-anki-content .study-anki-table {width:100%;border-collapse:collapse;table-layout:fixed;
+      font-variant-numeric:tabular-nums;font-size:clamp(7px,1.05vw,11px)}
+    #study-anki-content .study-anki-table th {font-size:clamp(7px,.93vw,10px);
+      font-weight:500;color:var(--muted);text-align:left;white-space:normal;line-height:1.1;
+      padding:4px 3px;border-bottom:1px solid var(--line)}
+    #study-anki-content .study-anki-table td {padding:6px 3px;border-bottom:1px solid var(--line);
+      vertical-align:middle;line-height:1.15;overflow-wrap:anywhere;word-break:normal}
+    #study-anki-content .study-anki-table tr:last-child td {border-bottom:0}
+    #study-anki-content .study-anki-table td:first-child {font-weight:600}
+    #study-anki-content .study-anki-table .anki-number {color:var(--muted);font-weight:400}
+    #study-anki-content .study-anki-table .anki-sub {font-size:clamp(6px,.9vw,9px);
+      color:var(--muted);display:block;line-height:1.1;margin-top:2px}
+    #study-anki-foot {font-size:10px;line-height:1.3;color:var(--muted);margin:5px 0 0}
+    @media(max-width:600px) {
+      #study-anki-content .study-anki-table {font-size:clamp(5px,1.25vw,8px)}
+      #study-anki-content .study-anki-table th {font-size:clamp(5px,1.15vw,7px);padding:3px 1px}
+      #study-anki-content .study-anki-table td {padding:4px 1px}
+      #study-anki-content .study-anki-table .anki-sub {font-size:clamp(5px,1vw,7px)}
+    }
     .study-anki-card {padding:9px 2px;border-bottom:1px solid var(--line)}
     .study-anki-card:last-of-type {border-bottom:0}
     .study-anki-card-title {display:flex;gap:7px;align-items:baseline;min-width:0;
@@ -193,6 +213,83 @@ if (board && toDos && settings) {
     return list;
   }
 
+  // Compact leaderboard table: every metric remains visible in each person's row.
+  // Column widths add up to 100%, so the panel never needs horizontal scrolling.
+  function scoreTable(scores, startRank = 1, names = configuredNames) {
+    const table = document.createElement('table');
+    table.className = 'study-anki-table';
+    table.setAttribute('aria-label', 'Anki leaderboard statistics');
+    const columns = [
+      ['Participant', 'Participant name (Anki username)', '25%'],
+      ['Today', 'Reviews today', '5.5%'],
+      ['Time', 'Study time today', '6%'],
+      ['Streak', 'Streak in days', '6%'],
+      ['31d', 'Reviews in the past 31 days and average per day', '8%'],
+      ['Ret.', 'Retention percentage', '5.5%'],
+      ['Country', 'Country', '7%'],
+      ['League', 'League', '7%'],
+      ['Group', 'Anki group', '8%'],
+      ['Rank', 'Anki review rank', '5.5%'],
+      ['Day', 'Anki day', '8%'],
+      ['Saved', 'Last snapshot saved', '8.5%']
+    ];
+    const colgroup = document.createElement('colgroup');
+    const head = document.createElement('thead');
+    const heading = document.createElement('tr');
+    columns.forEach(([short, full, width]) => {
+      const col = document.createElement('col');
+      col.style.width = width;
+      colgroup.appendChild(col);
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = short;
+      th.title = full;
+      heading.appendChild(th);
+    });
+    head.appendChild(heading);
+    const tbody = document.createElement('tbody');
+    const shortDateTime = raw => {
+      if (!raw) return '—';
+      const date = new Date(raw);
+      if (Number.isNaN(date.getTime())) return '—';
+      const day = `${date.getMonth() + 1}/${date.getDate()}`;
+      const h = date.getHours();
+      return `${day} ${h % 12 || 12}:${String(date.getMinutes()).padStart(2, '0')}${h < 12 ? 'a' : 'p'}`;
+    };
+    scores.forEach((row, i) => {
+      const tr = document.createElement('tr');
+      const cell = (value, full = '', secondary = '') => {
+        const td = document.createElement('td');
+        td.textContent = String(value == null ? '—' : value);
+        if (full) td.title = full;
+        if (secondary) {
+          const sub = document.createElement('span');
+          sub.className = 'anki-sub';
+          sub.textContent = secondary;
+          td.appendChild(sub);
+        }
+        tr.appendChild(td);
+      };
+      const name = displayName(row, names);
+      cell(`${startRank + i}. ${name}`, name);
+      cell(number(row.reviews));
+      cell(fmtMinutes(row.minutes).replace(/\s/g, ''), fmtMinutes(row.minutes));
+      cell(row.streak == null ? '—' : `${row.streak}d`, row.streak == null ? '' : `${row.streak} days`);
+      cell(number(row.reviews_31d), 'Reviews in the past 31 days',
+        row.reviews_31d == null ? '' : `${(Number(row.reviews_31d) / 31).toFixed(1)}/day`);
+      cell(row.retention == null ? '—' : `${Number(row.retention).toFixed(1)}%`);
+      cell(row.country || '—');
+      cell(row.league || '—');
+      cell(row.anki_group || '—');
+      cell(number(row.review_rank));
+      cell(row.anki_day || '—');
+      cell(shortDateTime(row.captured_at), row.captured_at ? new Date(row.captured_at).toLocaleString() : '');
+      tbody.appendChild(tr);
+    });
+    table.append(colgroup, head, tbody);
+    return table;
+  }
+
   async function rpc(method, params) {
     const response = await fetch(`${endpoint}/rest/v1/rpc/${method}`, {
       method: 'POST',
@@ -231,13 +328,13 @@ if (board && toDos && settings) {
     }
     const rows = [...allRows].sort((a, b) => (b.reviews ?? -1) - (a.reviews ?? -1)
       || String(a.username).localeCompare(String(b.username)));
-    const pageSize = Math.max(4, Math.min(8, Math.floor((window.innerHeight - 290) / 25)));
+    const pageSize = Math.max(2, Math.min(8, Math.floor((window.innerHeight - 260) / 32)));
     const pages = Math.max(1, Math.ceil(rows.length / pageSize));
     pageIndex = Math.max(0, Math.min(pageIndex, pages - 1));
     const recent = rows.map(r => r.anki_day).filter(Boolean).sort().at(-1);
     panelStatus.textContent = recent ? `Latest: ${recent}` : `${rows.length} registered`;
 
-    body.appendChild(scoreGrid(
+    body.appendChild(scoreTable(
       rows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
       pageIndex * pageSize + 1
     ));
@@ -413,9 +510,9 @@ if (board && toDos && settings) {
       window.dispatchEvent(new Event('pomo-study-collapse-people'));
       if (!boardKey) body.textContent = 'Open this Activity in Discord first.';
       else {
-           if (fetchedBoard === boardKey) draw();
-           void load();
-         }
+        if (fetchedBoard === boardKey) draw();
+        void load();
+      }
     }
   });
   setInterval(() => {
