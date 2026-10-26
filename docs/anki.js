@@ -329,6 +329,7 @@ if (board && toDos && settings) {
   async function rpc(method, params) {
     const response = await fetch(`${endpoint}/rest/v1/rpc/${method}`, {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         apikey: SUPABASE_PUBLISHABLE_KEY,
         'Content-Type': 'application/json'
@@ -392,29 +393,37 @@ if (board && toDos && settings) {
     const foot = document.createElement('p');
     foot.id = 'study-anki-foot';
     const latest = rows.map(r => r.captured_at).filter(Boolean).sort().at(-1);
-    foot.textContent = latest ? `Last website check saved: ${new Date(latest).toLocaleString()}. GitHub collection scheduled hourly at 5 minutes past the hour; runs may be delayed.` : 'Awaiting first Anki website check. — means unavailable.';
+    foot.textContent = latest ? `Last website check saved: ${new Date(latest).toLocaleString()}. Supabase Cron requests a GitHub collection every 5 minutes; results may arrive later.` : 'Awaiting first Anki website check. — means unavailable.';
     body.appendChild(foot);
   }
 
+  // Fresh data is more important than the previous one-minute cache when the
+  // leaderboard is opened. The Study Board itself refreshes every 15 seconds.
+  const refreshInterval = 15_000;
   async function load(force = false) {
-    if (!boardKey || busy || (!force && fetchedBoard === boardKey && Date.now() - fetchedAt < 60_000)) return;
+    if (!boardKey || busy || (!force && fetchedBoard === boardKey && Date.now() - fetchedAt < refreshInterval)) return;
+    const requestedBoard = boardKey;
     busy = true;
-    if (panel.open) body.textContent = 'Loading Anki leaderboard…';
+    // Keep the previous rows visible while requesting a fresher snapshot.
+    if (panel.open && fetchedBoard !== requestedBoard) body.textContent = 'Loading Anki leaderboard…';
     try {
-      const rows = await rpc('pomo_anki_board_scores', {p_board_key: boardKey});
+      const rows = await rpc('pomo_anki_board_scores', {p_board_key: requestedBoard});
+      if (requestedBoard !== boardKey) return; // Ignore responses for a previous channel.
       if (!Array.isArray(rows)) throw new Error('Unexpected leaderboard response');
       allRows = rows;
       fetchedAt = Date.now();
-      fetchedBoard = boardKey;
+      fetchedBoard = requestedBoard;
       reflectSettings();
       if (panel.open) draw();
       else panelStatus.textContent = `${rows.length} registered`;
     } catch (error) {
-      if (panel.open) body.textContent = `Could not load leaderboard: ${error.message}`;
+      if (requestedBoard !== boardKey) return;
+      if (panel.open && !allRows.length) body.textContent = `Could not load leaderboard: ${error.message}`;
       settingStatus.textContent = `Could not load Anki username: ${error.message}`;
       panelStatus.textContent = 'Sync error';
     } finally {
       busy = false;
+      if (requestedBoard !== boardKey) void load(true);
     }
   }
 
@@ -575,11 +584,18 @@ if (board && toDos && settings) {
       if (!boardKey) body.textContent = 'Open this Activity in Discord first.';
       else {
         if (fetchedBoard === boardKey) draw();
-        void load();
+        void load(true); // Opening always checks for the latest snapshot.
       }
     }
   });
   setInterval(() => {
-    if (panel.open && board.open) void load();
-  }, 60_000);
+    if (panel.open && board.open && !document.hidden) void load();
+  }, refreshInterval);
+  // Returning to the app after it was hidden should immediately refresh.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && panel.open && board.open) void load(true);
+  });
+  window.addEventListener('focus', () => {
+    if (panel.open && board.open) void load(true);
+  });
 }
