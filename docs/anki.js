@@ -392,7 +392,7 @@ if (board && toDos && settings) {
     const foot = document.createElement('p');
     foot.id = 'study-anki-foot';
     const latest = rows.map(r => r.captured_at).filter(Boolean).sort().at(-1);
-    foot.textContent = latest ? `Last website check saved: ${new Date(latest).toLocaleString()}. GitHub collection scheduled every 5 minutes.` : 'Awaiting first Anki website check. — means unavailable.';
+    foot.textContent = latest ? `Last website check saved: ${new Date(latest).toLocaleString()}. GitHub collection scheduled hourly at 5 minutes past the hour; runs may be delayed.` : 'Awaiting first Anki website check. — means unavailable.';
     body.appendChild(foot);
   }
 
