@@ -25,13 +25,19 @@ if (board && toDos && settings) {
     #study-anki-summary-status {margin-left:auto;min-width:0;font-size:10px;
       font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #study-anki-content {padding:4px 0 2px;min-width:0}
-    .study-anki-grid {display:grid;grid-template-columns:minmax(80px,1.7fr) repeat(4,minmax(35px,1fr));
-      gap:0 5px;align-items:center;min-width:0}
+    .study-anki-grid {display:grid;
+      grid-template-columns:minmax(17px,.35fr) minmax(66px,1.6fr) minmax(39px,.85fr)
+      minmax(42px,.9fr) minmax(29px,.6fr) minmax(72px,1.45fr)
+      minmax(37px,.8fr) minmax(36px,.7fr);
+      gap:0 3px;align-items:center;min-width:0}
     .study-anki-grid > * {min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-      padding:4px 2px;font-size:clamp(9px,1.5vw,12px);font-variant-numeric:tabular-nums}
-    .study-anki-grid .study-anki-label {color:var(--muted);font-size:10px;border-bottom:1px solid var(--line)}
-    .study-anki-grid .study-anki-user {font-weight:550}
+      padding:4px 1px;font-size:clamp(9px,1.2vw,12px);font-variant-numeric:tabular-nums}
+    .study-anki-grid .study-anki-label {color:var(--muted);font-size:clamp(8px,1vw,11px);
+      border-bottom:1px solid var(--line)}
+    .study-anki-grid .study-anki-user {font-weight:600}
     .study-anki-grid .study-anki-cell {text-align:right}
+    .study-anki-grid .study-anki-rank {text-align:center;font-weight:600}
+    .study-anki-grid .study-anki-past {white-space:pre-line;line-height:1.15}
     #study-anki-foot {margin:2px 0;color:var(--muted);font-size:10px;line-height:1.25}
     .study-anki-pages {display:flex;align-items:center;justify-content:center;gap:10px;font-size:10px}
     .study-anki-pages button {min-height:23px;padding:2px 8px;font-size:10px}
@@ -39,8 +45,11 @@ if (board && toDos && settings) {
     #study-dialog:has(#study-anki[open]) #study-people .study-task-rows,
     #study-dialog:has(#study-anki[open]) #study-people .study-task-pages {display:none}
     @media(max-width:480px){
-      .study-anki-grid {grid-template-columns:minmax(72px,1.5fr) repeat(4,minmax(30px,1fr));gap:0 2px}
-      .study-anki-grid > * {font-size:10px;padding:4px 1px}
+      .study-anki-grid {grid-template-columns:17px minmax(61px,1.6fr) minmax(32px,.7fr)
+        minmax(36px,.8fr) minmax(25px,.5fr) minmax(63px,1.3fr)
+        minmax(31px,.6fr) minmax(31px,.55fr);gap:0 2px}
+      .study-anki-grid > * {font-size:9px;padding:3px 0}
+      .study-anki-grid .study-anki-label {font-size:8px}
       #study-anki summary {font-size:11px}
     }
     @media(max-height:480px){.study-anki-grid > * {padding-block:2px}}
@@ -49,9 +58,11 @@ if (board && toDos && settings) {
     #study-anki-hover summary,#study-anki-history summary {font-size:11px;font-weight:600;list-style:none}
     #study-anki-hover summary::-webkit-details-marker,#study-anki-history summary::-webkit-details-marker {display:none}
     #study-anki-hover .study-anki-grid > *,#study-anki-history .study-anki-grid > * {
-      padding:2px 2px;font-size:10px}
+      padding:2px 0;font-size:8px}
     #study-anki-hover .study-anki-grid,#study-anki-history .study-anki-grid {
-      grid-template-columns:minmax(65px,1.6fr) repeat(4,minmax(30px,1fr));gap:0 3px}
+      grid-template-columns:14px minmax(58px,1.6fr) minmax(30px,.7fr)
+        minmax(32px,.7fr) minmax(22px,.5fr) minmax(58px,1.3fr)
+        minmax(28px,.6fr) minmax(29px,.55fr);gap:0 1px}
     #study-day-dialog #study-anki-history {flex:0 0 auto;max-height:40dvh;overflow:hidden}
     #study-preview #study-anki-hover {pointer-events:none}
   `;
@@ -109,6 +120,40 @@ if (board && toDos && settings) {
   };
   const number = value => value == null ? '—' : Number(value).toLocaleString('en-US');
 
+  // Shared Anki-style grid for the live board and saved calendar snapshots.
+  // Reviews today, NOT 31-day reviews, decides rank after every collection.
+  function scoreGrid(scores, startRank = 1) {
+    const grid = document.createElement('div');
+    grid.className = 'study-anki-grid';
+    function cell(value, klass = '', tooltip = '') {
+      const span = document.createElement('span');
+      span.className = klass;
+      span.textContent = String(value);
+      span.title = tooltip || String(value);
+      grid.appendChild(span);
+    }
+    const headers = ['#', 'Username', 'Reviews', 'Time', 'Streak', 'Past 31d', 'Ret.', 'Country'];
+    headers.forEach((title, i) => cell(title, 'study-anki-label' + (i > 1 ? ' study-anki-cell' : ''),
+      ['Rank within this channel', 'Anki username', 'Reviews today', 'Minutes today',
+       'Streak (days)', 'Past 31 days: average per day and total', 'Retention %', 'Country'][i]));
+    scores.forEach((row, i) => {
+      const extra = [row.league && `League: ${row.league}`,
+        row.anki_group && `Group: ${row.anki_group}`].filter(Boolean).join(' · ');
+      cell(startRank + i, 'study-anki-rank');
+      cell(row.username, 'study-anki-user', extra ? `${row.username} · ${extra}` : row.username);
+      cell(number(row.reviews), 'study-anki-cell', 'Reviews today');
+      cell(fmtMinutes(row.minutes), 'study-anki-cell', 'Time today');
+      cell(row.streak == null ? '—' : `${row.streak}d`, 'study-anki-cell');
+      const past = row.reviews_31d == null ? '—' :
+        `${Math.floor(Number(row.reviews_31d) / 31)}/d\n(${number(row.reviews_31d)})`;
+      cell(past, 'study-anki-cell study-anki-past', 'Past 31 days: average per day / total');
+      cell(row.retention == null ? '—' : `${Number(row.retention).toFixed(1).replace(/\.0$/, '')}%`,
+        'study-anki-cell');
+      cell(row.country && !['-', '—'].includes(row.country) ? row.country : '—', 'study-anki-cell');
+    });
+    return grid;
+  }
+
   async function rpc(method, params) {
     const response = await fetch(`${endpoint}/rest/v1/rpc/${method}`, {
       method: 'POST',
@@ -147,26 +192,10 @@ if (board && toDos && settings) {
     const recent = rows.map(r => r.anki_day).filter(Boolean).sort().at(-1);
     panelStatus.textContent = recent ? `Latest: ${recent}` : `${rows.length} registered`;
 
-    const grid = document.createElement('div');
-    grid.className = 'study-anki-grid';
-    function cell(value, klass = '', title = '') {
-      const span = document.createElement('span');
-      span.className = klass;
-      span.textContent = String(value);
-      if (title) span.title = title;
-      grid.appendChild(span);
-    }
-    for (const heading of ['Username', 'Reviews', 'Time', 'Streak', 'Retention']) {
-      cell(heading, 'study-anki-label' + (heading === 'Username' ? '' : ' study-anki-cell'));
-    }
-    for (const row of rows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)) {
-      cell(row.username, 'study-anki-user', row.username);
-      cell(number(row.reviews), 'study-anki-cell', row.anki_day || 'Not yet captured');
-      cell(fmtMinutes(row.minutes), 'study-anki-cell');
-      cell(row.streak == null ? '—' : `${row.streak}d`, 'study-anki-cell');
-      cell(row.retention == null ? '—' : `${Math.round(row.retention)}%`, 'study-anki-cell');
-    }
-    body.appendChild(grid);
+    body.appendChild(scoreGrid(
+      rows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
+      pageIndex * pageSize + 1
+    ));
 
     if (pages > 1) {
       const nav = document.createElement('div');
@@ -185,12 +214,12 @@ if (board && toDos && settings) {
     const foot = document.createElement('p');
     foot.id = 'study-anki-foot';
     const latest = rows.map(r => r.captured_at).filter(Boolean).sort().at(-1);
-    foot.textContent = latest ? `Last website check saved: ${new Date(latest).toLocaleString()}. Updates about every 5 minutes.` : 'Awaiting first Anki website check. — means unavailable.';
+    foot.textContent = latest ? `Last website check saved: ${new Date(latest).toLocaleString()}. GitHub collection scheduled every 5 minutes.` : 'Awaiting first Anki website check. — means unavailable.';
     body.appendChild(foot);
   }
 
   async function load(force = false) {
-    if (!boardKey || busy || (!force && fetchedBoard === boardKey && Date.now() - fetchedAt < 5 * 60_000)) return;
+    if (!boardKey || busy || (!force && fetchedBoard === boardKey && Date.now() - fetchedAt < 60_000)) return;
     busy = true;
     if (panel.open) body.textContent = 'Loading Anki leaderboard…';
     try {
@@ -290,26 +319,7 @@ if (board && toDos && settings) {
         content.textContent = 'No Anki history recorded for this day.';
       } else {
         const sorted = rows.sort((a, b) => (b.reviews ?? -1) - (a.reviews ?? -1));
-        const grid = document.createElement('div');
-        grid.className = 'study-anki-grid';
-        const cell = (value, cls = '') => {
-          const span = document.createElement('span');
-          span.className = cls;
-          span.textContent = String(value);
-          span.title = String(value);
-          grid.appendChild(span);
-        };
-        for (const label of ['Username', 'Reviews', 'Time', 'Streak', 'Retention']) {
-          cell(label, 'study-anki-label' + (label === 'Username' ? '' : ' study-anki-cell'));
-        }
-        for (const row of sorted.slice(0, limit)) {
-          cell(row.username, 'study-anki-user');
-          cell(number(row.reviews), 'study-anki-cell');
-          cell(fmtMinutes(row.minutes), 'study-anki-cell');
-          cell(row.streak == null ? '—' : `${row.streak}d`, 'study-anki-cell');
-          cell(row.retention == null ? '—' : `${Math.round(row.retention)}%`, 'study-anki-cell');
-        }
-        content.appendChild(grid);
+        content.appendChild(scoreGrid(sorted.slice(0, limit)));
         if (sorted.length > limit) {
           const note = document.createElement('p');
           note.className = 'study-task-more';
@@ -353,5 +363,5 @@ if (board && toDos && settings) {
   });
   setInterval(() => {
     if (panel.open && board.open) void load();
-  }, 5 * 60_000);
+  }, 60_000);
 }
