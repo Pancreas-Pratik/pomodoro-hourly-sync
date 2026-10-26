@@ -412,7 +412,10 @@ if (board && toDos && settings) {
     if (panel.open) {
       window.dispatchEvent(new Event('pomo-study-collapse-people'));
       if (!boardKey) body.textContent = 'Open this Activity in Discord first.';
-      else void load();
+      else {
+           if (fetchedBoard === boardKey) draw();
+           void load();
+         }
     }
   });
   setInterval(() => {
