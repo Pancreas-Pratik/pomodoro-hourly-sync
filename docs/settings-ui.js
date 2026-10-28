@@ -88,22 +88,5 @@
 
   dialog.addEventListener('close', () => gear.focus());
 
-  // Automatically detect the user's local time zone.
-  function showLocalZone() {
-    const zone = new Intl.DateTimeFormat('en-US', {
-      timeZoneName: 'long'
-    }).formatToParts(new Date())
-      .find(part => part.type === 'timeZoneName')?.value
-      || 'Local time';
-
-    schedule.textContent =
-      `Focus :00–:50 · Break :50–:00 · ${zone}`;
-  }
-
-  showLocalZone();
-  window.addEventListener('pageshow', showLocalZone);
-
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) showLocalZone();
-  });
+  // The timer renderer owns the active schedule description.
 })();

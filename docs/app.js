@@ -1,4 +1,4 @@
-import {initialState, current, change} from './timer.js';
+import {initialState, current, change} from './timer.js?v=10020';
 import {SharedTimer} from './shared.js';
 import {
   DISCORD_CLIENT_ID,
@@ -102,22 +102,32 @@ function render() {
     $('sync').firstChild.textContent = label;
   }
 
+  const twoHour = view.mode === 'twohour';
+  $('sync100').setAttribute('aria-pressed', String(twoHour));
+  $('sync100').firstChild.textContent = twoHour
+    ? '100 / 20 synchronized ' : 'Sync 100 / 20 ';
+  text('schedule', twoHour
+    ? '100 min focus · 20 min break · Every 2 hours from midnight Eastern'
+    : view.mode === 'hourly'
+      ? 'Focus :00–:50 · Break :50–:00 · Eastern Time'
+      : 'Personal lengths · Choose a sync schedule to align with the clock');
+
   const status = connecting
     ? 'Connecting to shared timer…'
     : sharedReady
       ? sharedConnection === 'online'
         ? view.mode === 'hourly'
           ? 'Shared · hourly schedule'
-          : 'Shared timer'
+          : twoHour ? 'Shared · 100 / 20 schedule' : 'Shared timer'
         : 'Shared · reconnecting…'
       : view.mode === 'hourly'
         ? 'Hourly schedule · local'
-        : 'Personal timer · local';
+        : twoHour ? '100 / 20 schedule · local' : 'Personal timer · local';
 
   text('connection', status);
   text('clock', clock.format(time));
 
-  for (const id of ['toggle', 'reset', 'sync', 'apply']) {
+  for (const id of ['toggle', 'reset', 'sync', 'sync100', 'apply']) {
     $(id).disabled = pending || connecting;
   }
 }
@@ -144,7 +154,7 @@ function updateControls() {
 function noteAction(type) {
   text(
     'message',
-    type === 'sync'
+    (type === 'sync' || type === 'sync100')
       ? 'Following the Eastern Time schedule.'
       : type === 'durations'
         ? 'Timer lengths updated for everyone in this Activity.'
@@ -222,6 +232,7 @@ $('toggle').onclick = () =>
 
 $('reset').onclick = () => act('reset');
 $('sync').onclick = () => act('sync');
+$('sync100').onclick = () => act('sync100');
 
 $('durations').onsubmit = event => {
   event.preventDefault();

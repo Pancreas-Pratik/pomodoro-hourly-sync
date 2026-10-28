@@ -554,3 +554,8 @@ main {
 @media(max-width:560px) {
   #settings-dialog {height:min(470px,calc(100dvh - 12px))}
 }
+
+/* Two clock-aligned schedules, kept in one compact row. */
+.sync-options { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }
+.sync-options button { width:100%; min-width:0; padding:8px 10px; font-size:clamp(10px,2vw,14px); text-align:left; display:flex; align-items:center; justify-content:space-between; gap:6px; }
+#sync100[aria-pressed="true"] { border-color:var(--sync-line,#86986b); color:var(--sync-ink,var(--accent)); }

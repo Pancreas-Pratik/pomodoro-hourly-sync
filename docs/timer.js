@@ -2,6 +2,8 @@ export const MINUTE = 60000;
 
 const eastern = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
+  hour: 'numeric',
+  hourCycle: 'h23',
   minute: 'numeric',
   second: 'numeric'
 });
@@ -15,21 +17,25 @@ export function initialState() {
 }
 
 export function current(state, now) {
-  if (state.mode === 'hourly') {
+  if (state.mode === 'hourly' || state.mode === 'twohour') {
     const parts = Object.fromEntries(
       eastern.formatToParts(now).map(p => [p.type, p.value])
     );
+    const twoHour = state.mode === 'twohour';
+    const focus = twoHour ? 100 : 50;
+    const rest = twoHour ? 20 : 10;
     const elapsed =
+      (twoHour ? Number(parts.hour) % 2 : 0) * 60 * MINUTE +
       Number(parts.minute) * MINUTE +
       Number(parts.second) * 1000 +
       ((now % 1000) + 1000) % 1000;
 
-    const phase = elapsed < 50 * MINUTE ? 'focus' : 'break';
+    const phase = elapsed < focus * MINUTE ? 'focus' : 'break';
     const remaining =
-      (phase === 'focus' ? 50 : 60) * MINUTE - elapsed;
+      (phase === 'focus' ? focus : focus + rest) * MINUTE - elapsed;
 
     return {
-      ...state, focus: 50, rest: 10,
+      ...state, focus, rest,
       phase, running: true,
       remaining, endsAt: now + remaining
     };
@@ -58,6 +64,9 @@ export function change(state, action, now) {
   switch (action.type) {
     case 'sync':
       next = current({...next, mode: 'hourly'}, now);
+      break;
+    case 'sync100':
+      next = current({...next, mode: 'twohour'}, now);
       break;
     case 'pause':
       next = {...next, mode: 'custom',
